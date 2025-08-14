@@ -615,6 +615,8 @@ void decideDir(CHASSIS* AGV_Chassis, ELEVATOR* elevator,volatile Numeros* numero
 
         }
 
+//skjadlkfj
+
         if (numeros[1].i != 2) lineFollowerMode = 0;
 
         float elevador = numeros[4].f;
