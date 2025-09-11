@@ -22,7 +22,6 @@
 #include "motor_controller.h"
 #include "servos.h"
 #include "chassis.h"
-#include "elevator.h"
 #include "IR.h"
 
 IRSensor IR_OuterRight = { GPIOB, 8};
@@ -98,11 +97,11 @@ float atof(volatile uint8_t* data, int size);
 int strncmp(const char *s1, const char *s2, int n);
 
 void decideNegPos(volatile Numeros* numeros, uint8_t count);
-void decideDir(CHASSIS* AGV_Chassis, ELEVATOR* elevator,volatile Numeros* numeros, uint8_t count);
+void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count);
 
 // Communication function prototypes
 void USART2_IRQHandler(void);
-void USART2_HandleMessage(CHASSIS* AGV_Chassis, ELEVATOR* elevator);
+void USART2_HandleMessage(CHASSIS* AGV_Chassis);
 void USART2_SendChar(char c);
 void USART2_SendString(const char *str);
 void USART2_SendFloat(float value, uint8_t decimalPlaces);
@@ -121,7 +120,6 @@ int main(void) {
 	MotorController motorA;
 	MotorController motorB;
 	CHASSIS agv;
-	ELEVATOR elevator;
 
 	// Initialize motor (Dir1, Dir2, PWM, BrakePin)
 	Motor_Init(&motorA, 6, 7, 8, 5);
@@ -136,8 +134,6 @@ int main(void) {
 	IR_Init(&IR_1);
 	IR_Init(&IR_2);
 	IR_Init(&IR_3);
-
-	Elevator_Init(&elevator, 3, 2);
 
    // Test sequence
     while (1) {
@@ -158,11 +154,23 @@ int main(void) {
     		emergencyStop = 1;
     	}
 
+
+    	emergencyStop = 0;
+
+    	// Leer el bit 7 de IDR (Input Data Register)
+    	if ((GPIOA->IDR & (1 << 7)) == 0) {
+    	    // PA7 está en LOW -> activar paro de emergencia
+    	    emergencyStop = 1;
+    	} else {
+    	    // PA7 está en HIGH -> permitir continuar
+            emergencyStop = 0;
+    	}
+
 		if (!emergencyStop) {
 
 			if (rx_ready == 1) {
 				apply_CurrentSpeedsToMotors(&agv);
-				USART2_HandleMessage(&agv, &elevator);
+				USART2_HandleMessage(&agv);
 			}
 
 			if (lineFollowerMode == 1) {
@@ -195,6 +203,8 @@ void USART2_Init_Interrupt(void) {
     // Configure PA2 (TX) and PA3 (RX)
     GPIOA->MODER &= ~((3 << 2*2) | (3 << 2*3));
     GPIOA->MODER |=  ((2 << 2*2) | (2 << 2*3));  // Alternate function mode
+
+    GPIOA->MODER &= ~((3 << 2*7)); //PA7 input for State of Bluetooth
 
     // Set AF1 for USART1
     GPIOA->AFR[0] &= ~((0xF << 4*2) | (0xF << 4*3));
@@ -234,7 +244,7 @@ void USART2_IRQHandler(void){
     }
 }
 
-void USART2_HandleMessage(CHASSIS* AGV_Chassis, ELEVATOR* elevator) {
+void USART2_HandleMessage(CHASSIS* AGV_Chassis) {
 
 
 	USART2_SendString("Echo: ");
@@ -242,7 +252,7 @@ void USART2_HandleMessage(CHASSIS* AGV_Chassis, ELEVATOR* elevator) {
 
 	uint8_t numArrays = parseCSV(rx_buf, rx_pos, parsedArrays);
 	uint8_t numArrayIntFloat = arrayToArrayIntOrFloat(parsedArrays, numArrays, indicacionesArray);
-	decideDir(AGV_Chassis, elevator, indicacionesArray, numArrayIntFloat);
+	decideDir(AGV_Chassis, indicacionesArray, numArrayIntFloat);
 
 	// Reset for next message
 	rx_pos = 0;
@@ -566,7 +576,7 @@ void decideNegPos(volatile Numeros* numeros, uint8_t count) {
 	}
 }
 
-void decideDir(CHASSIS* AGV_Chassis, ELEVATOR* elevator,volatile Numeros* numeros, uint8_t count) {
+void decideDir(CHASSIS* AGV_Chassis,volatile Numeros* numeros, uint8_t count) {
 
     // Asegura que no hay elementos extras para la decisión
     if (count < 4) return;
@@ -615,12 +625,7 @@ void decideDir(CHASSIS* AGV_Chassis, ELEVATOR* elevator,volatile Numeros* numero
 
         }
 
-//skjadlkfj
-
         if (numeros[1].i != 2) lineFollowerMode = 0;
-
-        float elevador = numeros[4].f;
-        elevator_SetSpeed(elevator, elevador);
     }
     else {
         // Cualquier otro caso detiene el sistema
