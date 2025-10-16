@@ -127,6 +127,22 @@ void Motor_SetSpeed(MotorController* motor, float speed) {
     }
 }
 
+void Motor_SetSpeed_noBreak_if_0(MotorController* motor, float speed) {
+    // Constrain speed
+    speed = (speed < -1.0) ? -1.0 : (speed > 1.0) ? 1.0 : speed;
+    motor->currentSpeed = speed;
+
+    if (fabsf(speed) < 0.001) {  // Near zero
+        setPWM(motor, 0);
+        setNoDirection(motor);
+        Motor_CoastMode(motor);
+    } else {
+    	Motor_CoastMode(motor);
+        setDirection(motor, (speed > 0));
+        setPWM(motor, (uint16_t)(fabsf(speed) * PWM_TIMER_PERIOD));
+    }
+}
+
 // Set full forward speed
 void Motor_Forward(MotorController* motor) {
     Motor_SetSpeed(motor, 1.0);

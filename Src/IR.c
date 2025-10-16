@@ -19,31 +19,35 @@ bool IR_GetState(IRSensor* IRSensor){
 }
 
 void LineFollower_Init(LineFollower* LineFollower){
+	IR_Init(&LineFollower->MostOutRight);
 	IR_Init(&LineFollower->OutRight);
 	IR_Init(&LineFollower->CenterRight);
 	IR_Init(&LineFollower->Center);
 	IR_Init(&LineFollower->CenterLeft);
 	IR_Init(&LineFollower->OutLeft);
+	IR_Init(&LineFollower->MostOutLeft);
 
 	LineFollower->previous_error = 0;
 	LineFollower->integral = 0;
-	LineFollower->Kp = 0.1; // Tune this
+	LineFollower->Kp = 0.06; // Tune this
 	LineFollower->Ki = 0.0;
-	LineFollower->Kd = 0.1; // Tune this
+	LineFollower->Kd = 0.02; // Tune this
 }
 
 void LineFollower_GetStates(LineFollower* LineFollower, volatile bool* LineFollowerStatesArray){
-	LineFollowerStatesArray[0] = IR_GetState(&LineFollower->OutRight);
-	LineFollowerStatesArray[1] = IR_GetState(&LineFollower->CenterRight);
-	LineFollowerStatesArray[2]= IR_GetState(&LineFollower->Center);
-	LineFollowerStatesArray[3] = IR_GetState(&LineFollower->CenterLeft);
-	LineFollowerStatesArray[4]= IR_GetState(&LineFollower->OutLeft);
+	LineFollowerStatesArray[0] = IR_GetState(&LineFollower->MostOutRight);
+	LineFollowerStatesArray[1] = IR_GetState(&LineFollower->OutRight);
+	LineFollowerStatesArray[2] = IR_GetState(&LineFollower->CenterRight);
+	LineFollowerStatesArray[3]= IR_GetState(&LineFollower->Center);
+	LineFollowerStatesArray[4] = IR_GetState(&LineFollower->CenterLeft);
+	LineFollowerStatesArray[5]= IR_GetState(&LineFollower->OutLeft);
+	LineFollowerStatesArray[6] = IR_GetState(&LineFollower->MostOutLeft);
 }
 
-void computeErrors(volatile bool sensorStates[5], int weights[5], float* error, int* total) {
+void computeErrors(volatile bool sensorStates[7], float weights[7], float* error, int* total) {
     int sum = 0;
     int count = 0;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 7; i++) {
         if (sensorStates[i]) {
             sum += weights[i];
             count++;
@@ -54,8 +58,8 @@ void computeErrors(volatile bool sensorStates[5], int weights[5], float* error, 
 }
 
 void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity) {
-    volatile bool sensorStates[5];
-    int weights[5] = {-2, -1, 0, 1, 2};
+    volatile bool sensorStates[7];
+    float weights[7] = {-1,-0.5, -0.25, 0, 0.25, 0.5, 1};
 
     // Obtener estados de sensores (línea negra detectada o no)
     LineFollower_GetStates(LineFollower, sensorStates);
@@ -82,12 +86,12 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
     	// Aplicar velocidades nulas al  chasis
 		set_AdvanceSpeed(chassis, 0);      // Velocidad lineal
 		set_TurnSpeed(chassis, 0);        // Corrección de giro
-		apply_CurrentSpeedsToMotors(chassis);             // Aplicar al hardware
+		apply_CurrentSpeedsToMotors_noBrake_if_0(chassis);             // Aplicar al hardware
     } else {
     	// Aplicar velocidades al chasis
 		set_AdvanceSpeed(chassis, forward_velocity);      // Velocidad lineal
 		set_TurnSpeed(chassis, -angular_velocity);        // Corrección de giro
-		apply_CurrentSpeedsToMotors(chassis);             // Aplicar al hardware
+		apply_CurrentSpeedsToMotors_noBrake_if_0(chassis);             // Aplicar al hardware
     }
 
 }

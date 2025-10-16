@@ -27,12 +27,24 @@ bool turnInverted; // 0 = normal, 1 = turn directions are inverted
 bool brakeEnabled; // 0 = coastMode, 1 = breakMode
 } CHASSIS;
 
+// Structure to hold numbers extracted from USART_IRQ, either as float or integer
+typedef union {
+    int i;
+    float f;
+} Numeros;
+
+extern bool justEnteredLineMode;
+extern bool lineFollowerMode;
+
+extern float forward_speed_LF; // Choose based on desired speed (0.0 to 1.0)
+
 //Init functions
 void Init_Chassis(CHASSIS* AGV_Chassis, MotorController wheelLeft, MotorController wheelRight);
 
 //Control functions
 void reset_ChassisSpeeds(CHASSIS* AGV_Chassis);
 void apply_CurrentSpeedsToMotors(CHASSIS* AGV_Chassis);
+void apply_CurrentSpeedsToMotors_noBrake_if_0(CHASSIS* AGV_Chassis);
 void set_SafeFactorBackwards(CHASSIS* AGV_Chassis, float safeFactor);
 void set_MaxSpeed(CHASSIS* AGV_Chassis, float maxSpeed);
 void set_AdvanceSpeed(CHASSIS* AGV_Chassis, float advanceSpeed);
@@ -51,5 +63,8 @@ float get_CurrentChassisTurnSpeed(const CHASSIS* AGV_C);
 bool get_AdvanceInverted(const CHASSIS* AGV_C);
 bool get_TurnInverted(const CHASSIS* AGV_C);
 bool get_BrakeEnabled(const CHASSIS* AGV_C);
+
+//General function
+void decideDir(CHASSIS* AGV_Chassis,volatile Numeros* numeros, uint8_t count);
 
 #endif /* CHASSIS_H_ */

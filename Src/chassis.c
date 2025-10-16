@@ -81,6 +81,13 @@ void apply_CurrentSpeedsToMotors(CHASSIS* AGV_Chassis){
 	Motor_SetSpeed(&AGV_Chassis->wheelLeft, AGV_Chassis->currentLeftWheelSpeed);
 	Motor_SetSpeed(&AGV_Chassis->wheelRight, AGV_Chassis->currentRightWheelSpeed);
 }
+
+void apply_CurrentSpeedsToMotors_noBrake_if_0(CHASSIS* AGV_Chassis){
+	calculateWheelSpeeds(AGV_Chassis);
+	Motor_SetSpeed_noBreak_if_0(&AGV_Chassis->wheelLeft, AGV_Chassis->currentLeftWheelSpeed);
+	Motor_SetSpeed_noBreak_if_0(&AGV_Chassis->wheelRight, AGV_Chassis->currentRightWheelSpeed);
+}
+
 void set_SafeFactorBackwards(CHASSIS* AGV_Chassis, float safeFactor){
 	safeFactor = (safeFactor < 0) ? 0 : (safeFactor > 1.0) ? 1.0 : safeFactor;
 	AGV_Chassis->safeFactorBackwardsSpeed = safeFactor;
@@ -167,6 +174,62 @@ void SoftStart_Chassis(CHASSIS* chassis, float targetAdvance, float targetTurn, 
     }
 }
 
+void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count) {
+
+    // Asegura que no hay elementos extras para la decisión
+    if (count < 4) return;
+
+    if (numeros[0].i == 0) {
+        // Apagar todo si el primer valor es 0
+    	stop_Chassis(AGV_Chassis);
+    }
+    else if (numeros[0].i == 1) {
+        if (numeros[1].i == 0) {
+        	stop_Chassis(AGV_Chassis);
+        	set_CoastMode(AGV_Chassis);
+        } else if (numeros[1].i == 1) {
+            float avance = numeros[2].f;
+            float giro = numeros[3].f;
+
+
+            // Validación del rango permitido para avance
+            if (avance >= -1.0 && avance <= 1.0) {
+                set_AdvanceSpeed(AGV_Chassis, avance);
+            } else {
+                // Si el valor está fuera de rango, detener
+                set_AdvanceSpeed(AGV_Chassis, 0);
+            }
+            if (giro >= -1.0 && giro <= 1.0) {
+				set_TurnSpeed(AGV_Chassis, giro);
+			} else {
+				// Si el valor está fuera de rango, detener
+				set_TurnSpeed(AGV_Chassis, 0);
+			}
+            apply_CurrentSpeedsToMotors(AGV_Chassis);
+
+        } else if (numeros[1].i == 2) {
+        	lineFollowerMode = 1;
+        	justEnteredLineMode = 1;
+
+        	float avance = numeros[2].f;
+
+
+			// Validación del rango permitido para avance
+			if (avance >= -1.0 && avance <= 1.0) {
+				forward_speed_LF = avance;
+			} else {
+				forward_speed_LF = 0;
+			}
+
+        }
+
+        if (numeros[1].i != 2) lineFollowerMode = 0;
+    }
+    else {
+        // Cualquier otro caso detiene el sistema
+    	stop_Chassis(AGV_Chassis);
+    }
+}
 
 
 

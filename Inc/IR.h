@@ -19,11 +19,13 @@ typedef struct {
 } IRSensor;
 
 typedef struct {
+	IRSensor MostOutRight;
 	IRSensor OutRight;
 	IRSensor CenterRight;
 	IRSensor Center;
 	IRSensor CenterLeft;
 	IRSensor OutLeft;
+	IRSensor MostOutLeft;
 
     // PID variables
     float previous_error;
@@ -38,7 +40,7 @@ void IR_Init(IRSensor* IRSensor);
 bool IR_GetState(IRSensor* sensor);
 void LineFollower_Init(LineFollower* LineFollower);
 void LineFollower_GetStates(LineFollower* LineFollower, volatile bool* LineFollowerStatesArray);
-void computeErrors(volatile bool sensorStates[5], int weights[5], float* error, int* total);
+void computeErrors(volatile bool sensorStates[7], float weights[7], float* error, int* total);
 void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity);
 
 #endif /* IR_H_ */

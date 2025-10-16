@@ -28,6 +28,7 @@ void Motor_Init(MotorController* motor, int dir1, int dir2, int pwmpin, int brak
 // Control functions
 void Motor_Invert(MotorController* motor, bool inverted);	// input: 0 for normal, 1 for inverted
 void Motor_SetSpeed(MotorController* motor, float speed);  // -1.0 to 1.0
+void Motor_SetSpeed_noBreak_if_0(MotorController* motor, float speed);
 void Motor_Forward(MotorController* motor);
 void Motor_Reverse(MotorController* motor);
 void Motor_BrakeMode(MotorController* motor);
