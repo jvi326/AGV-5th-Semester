@@ -182,8 +182,7 @@ void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count) {
     if (numeros[0].i == 0) {
         // Apagar todo si el primer valor es 0
     	stop_Chassis(AGV_Chassis);
-    }
-    else if (numeros[0].i == 1) {
+    } else if (numeros[0].i == 1) {
         if (numeros[1].i == 0) {
         	stop_Chassis(AGV_Chassis);
         	set_CoastMode(AGV_Chassis);
@@ -220,15 +219,31 @@ void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count) {
 			} else {
 				forward_speed_LF = 0;
 			}
-
         }
+    } else if (numeros[1].i == 3) {
+    	lineFollowerMode = 1;
+    	justEnteredLineMode = 1;
 
-        if (numeros[1].i != 2) lineFollowerMode = 0;
-    }
-    else {
+    	float avance = numeros[2].f;
+
+    	temp_P = numeros[3].f;
+    	temp_I = numeros[4].f;
+    	temp_D = numeros[5].f;
+
+
+		// Validación del rango permitido para avance
+		if (avance >= -1.0 && avance <= 1.0) {
+			forward_speed_LF = avance;
+		} else {
+			forward_speed_LF = 0;
+		}
+
+    } else {
         // Cualquier otro caso detiene el sistema
     	stop_Chassis(AGV_Chassis);
     }
+
+    if ((numeros[1].i != 2) & (numeros[1].i != 3)) lineFollowerMode = 0;
 }
 
 

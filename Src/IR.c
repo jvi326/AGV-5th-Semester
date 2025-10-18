@@ -1,5 +1,6 @@
 #include "IR.h"
 #include "chassis.h"
+#include "Bluetooth_USART2.h"
 
 void IR_Init(IRSensor* IRSensor){
 	if (IRSensor->trig_port == GPIOB)
@@ -29,9 +30,9 @@ void LineFollower_Init(LineFollower* LineFollower){
 
 	LineFollower->previous_error = 0;
 	LineFollower->integral = 0;
-	LineFollower->Kp = 0.06; // Tune this
+	LineFollower->Kp = 0.1;// Tune this
 	LineFollower->Ki = 0.0;
-	LineFollower->Kd = 0.02; // Tune this
+	LineFollower->Kd = 0.1; // Tune this
 }
 
 void LineFollower_GetStates(LineFollower* LineFollower, volatile bool* LineFollowerStatesArray){
@@ -53,13 +54,13 @@ void computeErrors(volatile bool sensorStates[7], float weights[7], float* error
             count++;
         }
     }
-    *error = (count > 0) ? ((float)sum / count) : 0;
+    *error = (count > 0) ? ( (float)sum/(float)count ) : 0;
     *total = count;
 }
 
 void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity) {
     volatile bool sensorStates[7];
-    float weights[7] = {-1,-0.5, -0.25, 0, 0.25, 0.5, 1};
+    float weights[7] = {1, 0.5, 0.2, 0, -0.2, -0.5, -1};
 
     // Obtener estados de sensores (línea negra detectada o no)
     LineFollower_GetStates(LineFollower, sensorStates);
@@ -67,7 +68,10 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
     // Calcular error
     float error = 0.0f;
     int total = 0;
+
+
     computeErrors(sensorStates, weights, &error, &total);
+    USART2_SendSensorData(sensorStates, 7, error, total);
 
     // --- Control PID ---
     float derivative = error - LineFollower->previous_error;

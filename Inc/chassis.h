@@ -38,6 +38,10 @@ extern bool lineFollowerMode;
 
 extern float forward_speed_LF; // Choose based on desired speed (0.0 to 1.0)
 
+extern float temp_P;
+extern float temp_I;
+extern float temp_D;
+
 //Init functions
 void Init_Chassis(CHASSIS* AGV_Chassis, MotorController wheelLeft, MotorController wheelRight);
 

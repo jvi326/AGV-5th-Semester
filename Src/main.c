@@ -45,6 +45,9 @@ bool lineFollowerMode = 0;
 bool flag_Bluetooth_state = 1;
 
 float forward_speed_LF = 0; // Choose based on desired speed (0.0 to 1.0)
+float temp_P;
+float temp_I;
+float temp_D;
 
 int main(void) {
 	USART2_Init_Interrupt();

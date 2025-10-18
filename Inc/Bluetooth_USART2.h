@@ -62,4 +62,6 @@ float atof(volatile uint8_t* data, int size);
 int strncmp(const char *s1, const char *s2, int n);
 void decideNegPos(volatile Numeros* numeros, uint8_t count);
 
+void USART2_SendSensorData(const volatile bool *sensorStates, uint8_t count, float floatValue, int intValue);
+
 #endif /* BLUETOOTH_USART2_H_ */

@@ -455,3 +455,49 @@ void EXTI4_15_IRQHandler(void) {
         EXTI->PR |= (1 << 7);
     }
 }
+
+void USART2_SendSensorData(const volatile bool *sensorStates, uint8_t count, float floatValue, int intValue) {
+    char buffer[64];
+    char *ptr = buffer;
+
+    // Write sensor states as comma-separated 0/1
+    for (uint8_t i = 0; i < count; i++) {
+        *ptr++ = sensorStates[i] ? '1' : '0';
+        if (i < count - 1) *ptr++ = ',';
+    }
+
+    *ptr++ = ',';
+
+    // ----- FLOAT TO STRING -----
+    if (floatValue < 0) {
+        *ptr++ = '-';
+        floatValue = -floatValue;
+    }
+
+    int intPart = (int)floatValue;
+    float frac = floatValue - intPart;
+
+    // Integer part
+    char temp[12];
+    char *p = itoa(intPart, temp, 10);
+    while (*p) *ptr++ = *p++;
+
+    *ptr++ = '.';
+
+    // Fractional part with 2 decimals
+    frac *= 100;
+    int fracInt = (int)(frac + 0.5f);
+    if (fracInt < 10) *ptr++ = '0'; // leading zero if < 0.1
+    p = itoa(fracInt, temp, 10);
+    while (*p) *ptr++ = *p++;
+
+    // ----- INTEGER VALUE -----
+    *ptr++ = ',';
+    p = itoa(intValue, temp, 10);
+    while (*p) *ptr++ = *p++;
+
+    *ptr++ = '\n';
+    *ptr = '\0';
+
+    USART2_SendString(buffer);
+}
