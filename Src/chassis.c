@@ -221,7 +221,7 @@ void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count) {
 			}
         }
     } else if (numeros[1].i == 3) {
-    	lineFollowerMode = 1;
+    	lineFollowerMode = 2;
     	justEnteredLineMode = 1;
 
     	float avance = numeros[2].f;

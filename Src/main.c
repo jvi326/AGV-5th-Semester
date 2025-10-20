@@ -41,13 +41,13 @@ volatile int emergencyCounter = 0;
 volatile bool sensorStates[7];
 
 bool justEnteredLineMode;
-bool lineFollowerMode = 0;
+int lineFollowerMode = 0;
 bool flag_Bluetooth_state = 1;
 
 float forward_speed_LF = 0; // Choose based on desired speed (0.0 to 1.0)
-float temp_P;
-float temp_I;
-float temp_D;
+float temp_P = 0.75;
+float temp_I = 0;
+float temp_D = 0.3;
 
 int main(void) {
 	USART2_Init_Interrupt();
@@ -78,12 +78,17 @@ int main(void) {
 
 			if (lineFollowerMode == 1) {
 				if (justEnteredLineMode) {
-					SoftStart_Chassis(&agv, forward_speed_LF, 0.0, 500.0, 20.0);  // Ramp to 0.3 speed over 500ms
-					justEnteredLineMode = false;
-					delay_ms(500);
+				    resetPID();  // integral = 0, last_error = 0
+				    justEnteredLineMode = 0;
 				}
 				apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
 				LineFollower_FollowLine(&Follower, &agv, forward_speed_LF);
+			} else if (lineFollowerMode == 2) {
+				if (justEnteredLineMode) {
+				    resetPID();  // integral = 0, last_error = 0
+				    justEnteredLineMode = 0;
+				}
+				LineFollower_FollowLine_PID(&Follower, &agv, forward_speed_LF, temp_P, temp_I, temp_D);
 			}
 		} else {
 			pause_Chassis(&agv);

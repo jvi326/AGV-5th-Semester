@@ -34,7 +34,7 @@ typedef union {
 } Numeros;
 
 extern bool justEnteredLineMode;
-extern bool lineFollowerMode;
+extern int lineFollowerMode;
 
 extern float forward_speed_LF; // Choose based on desired speed (0.0 to 1.0)
 

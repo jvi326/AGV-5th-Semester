@@ -2,6 +2,9 @@
 #include "chassis.h"
 #include "Bluetooth_USART2.h"
 
+static float pid_last_error = 0;
+static float pid_integral = 0;
+
 void IR_Init(IRSensor* IRSensor){
 	if (IRSensor->trig_port == GPIOB)
 		RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
@@ -27,12 +30,6 @@ void LineFollower_Init(LineFollower* LineFollower){
 	IR_Init(&LineFollower->CenterLeft);
 	IR_Init(&LineFollower->OutLeft);
 	IR_Init(&LineFollower->MostOutLeft);
-
-	LineFollower->previous_error = 0;
-	LineFollower->integral = 0;
-	LineFollower->Kp = 0.1;// Tune this
-	LineFollower->Ki = 0.0;
-	LineFollower->Kd = 0.1; // Tune this
 }
 
 void LineFollower_GetStates(LineFollower* LineFollower, volatile bool* LineFollowerStatesArray){
@@ -46,63 +43,133 @@ void LineFollower_GetStates(LineFollower* LineFollower, volatile bool* LineFollo
 }
 
 void computeErrors(volatile bool sensorStates[7], float weights[7], float* error, int* total) {
-    int sum = 0;
-    int count = 0;
+    *error = 0.0f;
+    *total = 0;
+
     for (int i = 0; i < 7; i++) {
-        if (sensorStates[i]) {
-            sum += weights[i];
-            count++;
+        if (sensorStates[i]) {      // Sensor sees line
+            *error += weights[i];
+            (*total)++;
         }
     }
-    *error = (count > 0) ? ( (float)sum/(float)count ) : 0;
-    *total = count;
+
+    if (*total > 0) {
+        *error /= *total;  // average position
+    } else {
+        *error = 0.0f;     // Line lost
+    }
 }
 
 void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity) {
-    volatile bool sensorStates[7];
-    float weights[7] = {1, 0.5, 0.2, 0, -0.2, -0.5, -1};
+    bool sensorStates[7];
+    float weights[7] = {1, 0.75, 0.25, 0, -0.25, -0.75, -1};
+    float error;
+    int total;
 
-    // Obtener estados de sensores (línea negra detectada o no)
+    // 1️⃣ Read sensors and compute weighted error
     LineFollower_GetStates(LineFollower, sensorStates);
-
-    // Calcular error
-    float error = 0.0f;
-    int total = 0;
-
-
     computeErrors(sensorStates, weights, &error, &total);
-    USART2_SendSensorData(sensorStates, 7, error, total);
 
-    // --- Control PID ---
-    float derivative = error - LineFollower->previous_error;
-    LineFollower->integral += error;
-    LineFollower->previous_error = error;
-
-    float angular_velocity = LineFollower->Kp * error
-                           + LineFollower->Ki * LineFollower->integral
-                           + LineFollower->Kd * derivative;
-
-    // Limitar velocidad angular
-    if (angular_velocity > 1.0f) angular_velocity = 1.0f;
-    else if (angular_velocity < -1.0f) angular_velocity = -1.0f;
+    float leftSpeed  = 0.0f;
+    float rightSpeed = 0.0f;
+    float turnFactor = 0.0f;
 
     if (total == 0) {
-    	// Aplicar velocidades nulas al  chasis
-		set_AdvanceSpeed(chassis, 0);      // Velocidad lineal
-		set_TurnSpeed(chassis, 0);        // Corrección de giro
-		apply_CurrentSpeedsToMotors_noBrake_if_0(chassis);             // Aplicar al hardware
+        // 🚫 Line lost → stop motors
+        Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
+        Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
     } else {
-    	// Aplicar velocidades al chasis
-		set_AdvanceSpeed(chassis, forward_velocity);      // Velocidad lineal
-		set_TurnSpeed(chassis, -angular_velocity);        // Corrección de giro
-		apply_CurrentSpeedsToMotors_noBrake_if_0(chassis);             // Aplicar al hardware
+    	error = -error; //Side correction
+        // 2️⃣ PID computation
+        pid_integral += error;
+        float derivative = error - pid_last_error;
+        pid_last_error = error;
+
+        float Kp = temp_P;
+        float Ki = temp_I;
+        float Kd = temp_D;
+
+        turnFactor = Kp*error + Ki*pid_integral + Kd*derivative;
+
+        // 3️⃣ Clamp output
+        if (turnFactor > 1.0f) turnFactor = 1.0f;
+        if (turnFactor < -1.0f) turnFactor = -1.0f;
+
+        // 4️⃣ Base forward velocity
+        leftSpeed  = forward_velocity;
+        rightSpeed = forward_velocity;
+
+        // 5️⃣ Apply correction (differential steering)
+        if (turnFactor > 0) {
+            // Line is to the right → turn right (reduce left)
+            leftSpeed  *= (1.0f - turnFactor);
+        } else if (turnFactor < 0) {
+            // Line is to the left → turn left (reduce right)
+            rightSpeed *= (1.0f + turnFactor); // turnFactor is negative
+        }
+
+        // 6️⃣ Apply motor speeds
+        Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, leftSpeed);
+        Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, rightSpeed);
     }
 
+    // 7️⃣ Send debug info
+    USART2_SendSensorData(sensorStates, 7, error, total);
 }
 
 
-void reset_LineFollowerPID(LineFollower* LineFollower) {
-	LineFollower->previous_error = 0;
-	LineFollower->integral = 0;
+void LineFollower_FollowLine_PID(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity,
+                                 float Kp, float Ki, float Kd) {
+    bool sensorStates[7];
+    float weights[7] = {1, 0.75, 0.25, 0, -0.25, -0.75, -1};
+    float error;
+    int total;
+
+    // 1️⃣ Read sensor states
+    LineFollower_GetStates(LineFollower, sensorStates);
+    computeErrors(sensorStates, weights, &error, &total);
+
+    float leftSpeed  = 0;
+    float rightSpeed = 0;
+
+    if (total == 0) {
+        // Line lost → stop motors
+        Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
+        Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
+    } else {
+    	pid_integral += error;
+		float derivative = error - pid_last_error;
+		pid_last_error = error;
+
+		float turnFactor = Kp*error + Ki*pid_integral + Kd*derivative;
+
+		// Limit turnFactor to [-1, 1]
+		if (turnFactor > 1.0f) turnFactor = 1.0f;
+		if (turnFactor < -1.0f) turnFactor = -1.0f;
+
+		// 3️⃣ Base speed
+		float leftSpeed  = forward_velocity;
+		float rightSpeed = forward_velocity;
+
+		if (turnFactor < 0) {
+			leftSpeed *= (1.0f - turnFactor);   // turn right → reduce left
+		} else if (turnFactor > 0) {
+			rightSpeed *= (1.0f + turnFactor);  // turn left → reduce right
+		}
+
+		// 4️⃣ Apply speeds to motors
+		Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, leftSpeed);
+		Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, rightSpeed);
+    }
+
+    // 5️⃣ Send debug info
+    USART2_SendSensorData(sensorStates, 7, error, total);
+    USART2_SendFloat(leftSpeed, 2);
+    USART2_SendFloat(rightSpeed, 2);
+}
+
+void resetPID() {
+	pid_last_error = 0;
+	pid_integral = 0;
 }
 
