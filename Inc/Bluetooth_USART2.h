@@ -4,6 +4,7 @@
 #include "stm32f051x8.h"
 #include "motor_controller.h"
 #include "chassis.h"
+#include "ultrasonicos.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -63,5 +64,7 @@ int strncmp(const char *s1, const char *s2, int n);
 void decideNegPos(volatile Numeros* numeros, uint8_t count);
 
 void USART2_SendSensorData(const volatile bool *sensorStates, uint8_t count, float floatValue, int intValue);
+void SendObstacleStatusFloat(float detected);
+void Ultrasonicos_SendDistance1(void);
 
 #endif /* BLUETOOTH_USART2_H_ */

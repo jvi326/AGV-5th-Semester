@@ -440,22 +440,6 @@ void decideNegPos(volatile Numeros* numeros, uint8_t count) {
 	}
 }
 
-void EXTI4_15_IRQHandler(void) {
-    if (EXTI->PR & (1 << 7)) {   // Verifica que la interrupción venga de PA7
-        // Leer el estado actual del pin
-        if (GPIOA->IDR & (1 << 7)) {
-            // Flanco de subida → dispositivo se reconectó
-        	flag_Bluetooth_state = 1;
-        } else {
-            // Flanco de bajada → dispositivo se desconectó
-        	flag_Bluetooth_state = 0;
-        }
-
-        // Limpiar bandera de interrupción
-        EXTI->PR |= (1 << 7);
-    }
-}
-
 void USART2_SendSensorData(const volatile bool *sensorStates, uint8_t count, float floatValue, int intValue) {
     char buffer[64];
     char *ptr = buffer;
@@ -500,4 +484,29 @@ void USART2_SendSensorData(const volatile bool *sensorStates, uint8_t count, flo
     *ptr = '\0';
 
     USART2_SendString(buffer);
+}
+
+#include "Bluetooth_USART2.h"
+
+void SendObstacleStatusFloat(float detected) {
+    char buffer[20];
+    char *ptr = buffer;
+
+    // Copy message text
+    const char *msg = "Less than 50: ";
+    while (*msg) *ptr++ = *msg++;
+
+    // Convert float (0.0 or 1.0) to character
+    *ptr++ = detected >= 0.5f ? '1' : '0';
+    *ptr++ = '\n';
+    *ptr = '\0';
+
+    USART2_SendString(buffer);
+}
+
+void Ultrasonicos_SendDistance1(void)
+{
+    float d1 = Ultrasonicos_GetDistance1();
+
+    USART2_SendFloat(d1, 2); // Send with 2 decimal places
 }

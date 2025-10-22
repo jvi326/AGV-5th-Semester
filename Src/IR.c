@@ -62,7 +62,7 @@ void computeErrors(volatile bool sensorStates[7], float weights[7], float* error
 
 void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity) {
     bool sensorStates[7];
-    float weights[7] = {1, 0.75, 0.25, 0, -0.25, -0.75, -1};
+    float weights[7] = {45, 30, 15, 0, -15, -30, -45};
     float error;
     int total;
 
@@ -121,7 +121,7 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
 void LineFollower_FollowLine_PID(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity,
                                  float Kp, float Ki, float Kd) {
     bool sensorStates[7];
-    float weights[7] = {1, 0.75, 0.25, 0, -0.25, -0.75, -1};
+    float weights[7] = {1.30, 0.90, 0.40, 0, -0.40, -0.90, -1.30};
     float error;
     int total;
 

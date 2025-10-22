@@ -23,6 +23,7 @@
 #include "chassis.h"
 #include "Bluetooth_USART2.h"
 #include "IR.h"
+#include "ultrasonicos.h"
 
 #define RX_BUF_SIZE 32
 #define MAX_MENSAJE 20
@@ -41,17 +42,19 @@ volatile int emergencyCounter = 0;
 volatile bool sensorStates[7];
 
 bool justEnteredLineMode;
+bool dis_detected;
 int lineFollowerMode = 0;
 bool flag_Bluetooth_state = 1;
 
 float forward_speed_LF = 0; // Choose based on desired speed (0.0 to 1.0)
-float temp_P = 0.75;
+float temp_P = 0.2;
 float temp_I = 0;
-float temp_D = 0.3;
+float temp_D = 0.175;
 
 int main(void) {
 	USART2_Init_Interrupt();
 	System_Ready_Indicator();
+	//Ultrasonicos_Init();
 
 	MotorController motorA;
 	MotorController motorB;
@@ -95,7 +98,4 @@ int main(void) {
 		}
 	}
 }
-
-
-
 
