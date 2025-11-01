@@ -4,7 +4,6 @@
 #include "stm32f051x8.h"
 #include "motor_controller.h"
 #include "chassis.h"
-#include "ultrasonicos.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -36,7 +35,6 @@ extern volatile uint16_t rx_pos;
 extern volatile uint8_t rx_ready;
 extern volatile uint8_t bt_ready;
 
-extern bool flag_Bluetooth_state;
 
 // ===================== FUNCTION PROTOTYPES =====================
 
@@ -65,6 +63,5 @@ void decideNegPos(volatile Numeros* numeros, uint8_t count);
 
 void USART2_SendSensorData(const volatile bool *sensorStates, uint8_t count, float floatValue, int intValue);
 void SendObstacleStatusFloat(float detected);
-void Ultrasonicos_SendDistance1(void);
 
 #endif /* BLUETOOTH_USART2_H_ */

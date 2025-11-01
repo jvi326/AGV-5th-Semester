@@ -204,7 +204,6 @@ void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count) {
 				// Si el valor está fuera de rango, detener
 				set_TurnSpeed(AGV_Chassis, 0);
 			}
-            apply_CurrentSpeedsToMotors(AGV_Chassis);
 
         } else if (numeros[1].i == 2) {
         	lineFollowerMode = 1;

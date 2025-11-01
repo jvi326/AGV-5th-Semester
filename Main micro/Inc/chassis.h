@@ -27,6 +27,8 @@ bool turnInverted; // 0 = normal, 1 = turn directions are inverted
 bool brakeEnabled; // 0 = coastMode, 1 = breakMode
 } CHASSIS;
 
+extern volatile CHASSIS agv;
+
 // Structure to hold numbers extracted from USART_IRQ, either as float or integer
 typedef union {
     int i;

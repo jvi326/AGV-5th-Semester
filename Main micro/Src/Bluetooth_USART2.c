@@ -55,21 +55,6 @@ void USART2_Init_Interrupt(void) {
     GPIOA->MODER &= ~((3 << 2*2) | (3 << 2*3));
     GPIOA->MODER |=  ((2 << 2*2) | (2 << 2*3));  // Alternate function mode
 
-    // --- PA7: Input for Bluetooth State ---
-    GPIOA->MODER &= ~(3 << 14);
-    GPIOA->PUPDR &= ~(3 << 14);
-    GPIOA->PUPDR |=  (1 << 14);  // Pull-up
-
-    // --- EXTI7 config ---
-    SYSCFG->EXTICR[1] &= ~(0xF << 4);  // Map PA7 to EXTI7
-    SYSCFG->EXTICR[1] |=  (0x0 << 4);
-    EXTI->RTSR |=  (1 << 7);   // Rising edge trigger enable
-    EXTI->FTSR |=  (1 << 7);   // Falling edge trigger enable
-    EXTI->IMR  |=  (1 << 7);
-
-    NVIC_EnableIRQ(EXTI4_15_IRQn);
-    NVIC_SetPriority(EXTI4_15_IRQn, 1);
-
     // Set AF1 for USART1
     GPIOA->AFR[0] &= ~((0xF << 4*2) | (0xF << 4*3));
     GPIOA->AFR[0] |=  ((1 << 4*2) | (1 << 4*3));
@@ -486,8 +471,6 @@ void USART2_SendSensorData(const volatile bool *sensorStates, uint8_t count, flo
     USART2_SendString(buffer);
 }
 
-#include "Bluetooth_USART2.h"
-
 void SendObstacleStatusFloat(float detected) {
     char buffer[20];
     char *ptr = buffer;
@@ -502,11 +485,4 @@ void SendObstacleStatusFloat(float detected) {
     *ptr = '\0';
 
     USART2_SendString(buffer);
-}
-
-void Ultrasonicos_SendDistance1(void)
-{
-    float d1 = Ultrasonicos_GetDistance1();
-
-    USART2_SendFloat(d1, 2); // Send with 2 decimal places
 }

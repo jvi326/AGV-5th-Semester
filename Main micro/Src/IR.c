@@ -1,5 +1,6 @@
 #include "IR.h"
 #include "chassis.h"
+#include "Global_Stop_Causes.h"
 #include "Bluetooth_USART2.h"
 
 static float pid_last_error = 0;
@@ -79,7 +80,8 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
         Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
         Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
     } else {
-    	error = -error; //Side correction
+    	error = -error;
+    	//Side correction
         // 2️⃣ PID computation
         pid_integral += error;
         float derivative = error - pid_last_error;
@@ -96,8 +98,8 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
         if (turnFactor < -1.0f) turnFactor = -1.0f;
 
         // 4️⃣ Base forward velocity
-        leftSpeed  = forward_velocity;
-        rightSpeed = forward_velocity;
+        leftSpeed  = chassis->advanceInverted ? -forward_velocity : forward_velocity;
+        rightSpeed = chassis->advanceInverted ? -forward_velocity : forward_velocity;
 
         // 5️⃣ Apply correction (differential steering)
         if (turnFactor > 0) {
@@ -113,6 +115,7 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
         Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, rightSpeed);
     }
 
+
     // 7️⃣ Send debug info
     USART2_SendSensorData(sensorStates, 7, error, total);
 }
@@ -121,7 +124,7 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
 void LineFollower_FollowLine_PID(LineFollower* LineFollower, CHASSIS* chassis, float forward_velocity,
                                  float Kp, float Ki, float Kd) {
     bool sensorStates[7];
-    float weights[7] = {1.30, 0.90, 0.40, 0, -0.40, -0.90, -1.30};
+    float weights[7] = {45, 30, 15, 0, -15, -30, -45};
     float error;
     int total;
 
@@ -141,20 +144,20 @@ void LineFollower_FollowLine_PID(LineFollower* LineFollower, CHASSIS* chassis, f
 		float derivative = error - pid_last_error;
 		pid_last_error = error;
 
-		float turnFactor = Kp*error + Ki*pid_integral + Kd*derivative;
+		float turnFactor = temp_D*error + temp_I*pid_integral + temp_D*derivative;
 
 		// Limit turnFactor to [-1, 1]
 		if (turnFactor > 1.0f) turnFactor = 1.0f;
 		if (turnFactor < -1.0f) turnFactor = -1.0f;
 
 		// 3️⃣ Base speed
-		float leftSpeed  = forward_velocity;
-		float rightSpeed = forward_velocity;
+		float leftSpeed  = &chassis->advanceInverted ? forward_velocity : -forward_velocity;
+		float rightSpeed = chassis->advanceInverted ? forward_velocity : -forward_velocity;
 
 		if (turnFactor < 0) {
-			leftSpeed *= (1.0f - turnFactor);   // turn right → reduce left
+			leftSpeed = (chassis->advanceInverted ? forward_velocity : -forward_velocity) * (1.0f - turnFactor);   // turn right → reduce left
 		} else if (turnFactor > 0) {
-			rightSpeed *= (1.0f + turnFactor);  // turn left → reduce right
+			rightSpeed = (chassis->advanceInverted ? forward_velocity : -forward_velocity) * (1.0f + turnFactor);  // turn left → reduce right
 		}
 
 		// 4️⃣ Apply speeds to motors
