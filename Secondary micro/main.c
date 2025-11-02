@@ -1,26 +1,22 @@
 #include <stdint.h>
 #include <stm32f051x8.h>
-#include "uart_commands.h"
 
 
-uint32_t SystemCoreClock = 8000000;  // define la frecuencia
-
-volatile uint8_t response[4];
-
-/* ================= Config general ================= */
-#define VREF_VOLTS      3.3f
-/* OKY3066-2 -> 0.100 V/°C ; LM35 “pelón” -> 0.010 V/°C */
-#define LM35_V_PER_C    0.100f
 
 /* I2C1 pins */
 #define I2C_SCL_PIN     8u  /* PB8 */
 #define I2C_SDA_PIN     9u  /* PB9 */
 
+
+
 /* ===== SALIDAS LATCH EN PORTC (PC15..PC12) ===== */
-#define TEMP_GPIO   GPIOC
 #define COLOR_GPIO  GPIOC
-#define TEMP_PIN    15u   /* PC15 -> HIGH si tempC > 22 */
-#define COLOR_PIN   12u   /* PC12 -> HIGH si colorID > 0 */
+#define COLOR_GPIO1  GPIOA
+#define COLOR_PIN   15u   /* PC15 -> HIGH si colorID > 0 */
+#define COLOR_ROJO    14u   /* PC14 -> HIGH si es rojo  */
+#define COLOR_AZUL    7u   /* PA7 -> HIGH si es azul  */
+#define COLOR_VERDE    5u   /* PA5 -> HIGH si es azul  */
+
 
 /* TCS34725 */
 #define TCS34725_ADDRESS        (0x29u << 1)
@@ -42,7 +38,6 @@ volatile uint8_t response[4];
 static volatile uint32_t ms_ticks = 0;
 static uint8_t  tcs_inited = 0;
 
-volatile float tempC = 0.0f;
 volatile int   red = 0, green = 0, blue = 0;
 volatile int   colorID = 0;   /* 0=none,1=R,2=G,3=B */
 
@@ -71,15 +66,6 @@ static void     TCS34725_Begin(uint8_t atime, uint8_t gain);
 static void     TCS34725_GetRaw(uint16_t *r, uint16_t *g, uint16_t *b, uint16_t *c);
 static void     TCS34725_GetRGB(int *R, int *G, int *B);
 
-/* ADC (PB0/IN8) */
-static void     ADC_init_PB0(void);
-static uint16_t ADC_read_once(void);
-static float    readTemp(uint8_t samples);
-
-volatile uint8_t bytes_in_terminal;
-
-/* Utils */
-static inline float adc_to_volts(uint16_t raw) { return (raw * VREF_VOLTS) / 4095.0f; }
 static void delay_cycles(volatile uint32_t n){ while(n--) __asm__("nop"); }
 
 /* ================= Implementación ================= */
@@ -91,6 +77,8 @@ static void SysTick_Init_1ms(void)
     SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
 }
 static void DelayMs(uint32_t ms){ uint32_t s=ms_ticks; while((ms_ticks-s)<ms){ __NOP(); } }
+
+
 /* ---- I2C1 ---- */
 static void I2C1_ClearAllFlags(void)
 {
@@ -206,57 +194,42 @@ static void TCS34725_GetRGB(int *R, int *G, int *B)
     int Ri = (int)((uint32_t)r*255u/c);
     int Gi = (int)((uint32_t)g*255u/c);
     int Bi = (int)((uint32_t)b*255u/c);
-    if (Ri>255) Ri=255;
-    if (Gi>255) Gi=255;
-    if (Bi>255) Bi=255;
+    if (Ri>255) Ri=255;if (Gi>255) Gi=255; if (Bi>255) Bi=255;
     *R = Ri; *G = Gi; *B = Bi;
 }
 
-/* ---- ADC PB0 ---- */
-static void ADC_init_PB0(void)
-{
-    RCC->AHBENR  |= RCC_AHBENR_GPIOBEN;
-    RCC->APB2ENR |= RCC_APB2ENR_ADCEN;
-    GPIOB->MODER  |=  (3u << (0 * 2));
-    GPIOB->PUPDR  &= ~(3u << (0 * 2));
-    RCC->CR2 |= RCC_CR2_HSI14ON; while ((RCC->CR2 & RCC_CR2_HSI14RDY) == 0) { }
-    if (ADC1->CR & ADC_CR_ADEN){ ADC1->CR |= ADC_CR_ADDIS; while (ADC1->CR & ADC_CR_ADEN) { } }
-    ADC1->CR |= ADC_CR_ADCAL; while (ADC1->CR & ADC_CR_ADCAL) { }
-    ADC1->SMPR = ADC_SMPR_SMP_2 | ADC_SMPR_SMP_1 | ADC_SMPR_SMP_0;
-    ADC1->CHSELR = ADC_CHSELR_CHSEL8;
-    ADC1->CR |= ADC_CR_ADEN; while ((ADC1->ISR & ADC_ISR_ADRDY) == 0) { }
-    (void)ADC_read_once();
-}
-static uint16_t ADC_read_once(void)
-{
-    if (ADC1->ISR & ADC_ISR_EOC) (void)ADC1->DR;
-    ADC1->CR |= ADC_CR_ADSTART;
-    while ((ADC1->ISR & ADC_ISR_EOC) == 0) { }
-    return (uint16_t)ADC1->DR;
-}
-static float readTemp(uint8_t samples)
-{
-    if (samples == 0) samples = 1;
-    uint32_t acc=0; for(uint8_t i=0;i<samples;i++){ acc += ADC_read_once(); delay_cycles(1500); }
-    float meanCnt = (float)acc / (float)samples;
-    float vV = adc_to_volts((uint16_t)meanCnt);
-    return vV / LM35_V_PER_C; /* °C */
-}
-
-/* ==== SALIDAS LATCH EN PORTC (TEMP=PC15, COLOR=PC12) ==== */
+/* ==== SALIDAS LATCH EN PORTC (ROJO = PC15, COLOR = PC12) ==== */
 static void OUTS_Init(void)
 {
     RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+    RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
 
-    /* TEMP_OUT (PC15) */
-    TEMP_GPIO->MODER  &= ~(3u<<(TEMP_PIN*2));
-    TEMP_GPIO->MODER  |=  (1u<<(TEMP_PIN*2));   /* 01: output */
-    TEMP_GPIO->OTYPER &= ~(1u<<TEMP_PIN);
-    TEMP_GPIO->OSPEEDR |= (3u<<(TEMP_PIN*2));
-    TEMP_GPIO->PUPDR  &= ~(3u<<(TEMP_PIN*2));
-    TEMP_GPIO->BRR = (1u<<TEMP_PIN);           /* inicia LOW */
 
-    /* COLOR_OUT (PC12) */
+    /* ROJO (PC14) */
+    COLOR_GPIO->MODER  &= ~(3u<<(COLOR_ROJO*2));
+    COLOR_GPIO->MODER  |=  (1u<<(COLOR_ROJO*2));   /* 01: output */
+    COLOR_GPIO->OTYPER &= ~(1u<<COLOR_ROJO);
+    COLOR_GPIO->OSPEEDR |= (3u<<(COLOR_ROJO*2));
+    COLOR_GPIO->PUPDR  &= ~(3u<<(COLOR_ROJO*2));
+    COLOR_GPIO->BRR = (1u<<COLOR_ROJO);           /* inicia LOW */
+
+    /* AZUL (PA7) */
+    COLOR_GPIO1->MODER  &= ~(3u<<(COLOR_AZUL*2));
+    COLOR_GPIO1->MODER  |=  (1u<<(COLOR_AZUL*2));   /* 01: output */
+    COLOR_GPIO1->OTYPER &= ~(1u<<COLOR_AZUL);
+    COLOR_GPIO1->OSPEEDR |= (3u<<(COLOR_AZUL*2));
+    COLOR_GPIO1->PUPDR  &= ~(3u<<(COLOR_AZUL*2));
+    COLOR_GPIO1->BRR = (1u<<COLOR_AZUL);           /* inicia LOW */
+
+    /* VERDE (PA5) */
+    COLOR_GPIO1->MODER  &= ~(3u<<(COLOR_VERDE*2));
+    COLOR_GPIO1->MODER  |=  (1u<<(COLOR_VERDE*2));   /* 01: output */
+    COLOR_GPIO1->OTYPER &= ~(1u<<COLOR_VERDE);
+    COLOR_GPIO1->OSPEEDR |= (3u<<(COLOR_VERDE*2));
+    COLOR_GPIO1->PUPDR  &= ~(3u<<(COLOR_VERDE*2));
+    COLOR_GPIO1->BRR = (1u<<COLOR_VERDE);           /* inicia LOW */
+
+    /* COLOR_OUT (PC15) */
     COLOR_GPIO->MODER  &= ~(3u<<(COLOR_PIN*2));
     COLOR_GPIO->MODER  |=  (1u<<(COLOR_PIN*2)); /* 01: output */
     COLOR_GPIO->OTYPER &= ~(1u<<COLOR_PIN);
@@ -266,10 +239,14 @@ static void OUTS_Init(void)
 }
 
 /* Helpers de escritura rápida */
-static inline void TEMP_OUT_HIGH(void){ TEMP_GPIO->BSRR = (1u<<TEMP_PIN); }
-static inline void TEMP_OUT_LOW (void){ TEMP_GPIO->BRR  = (1u<<TEMP_PIN); }
 static inline void COLOR_OUT_HIGH(void){ COLOR_GPIO->BSRR = (1u<<COLOR_PIN); }
 static inline void COLOR_OUT_LOW (void){ COLOR_GPIO->BRR  = (1u<<COLOR_PIN); }
+static inline void COLOR_ROJO_HIGH(void){ COLOR_GPIO->BSRR = (1u<<COLOR_ROJO); }
+static inline void COLOR_ROJO_LOW (void){ COLOR_GPIO->BRR  = (1u<<COLOR_ROJO); }
+static inline void COLOR_AZUL_HIGH(void){ COLOR_GPIO1->BSRR = (1u<<COLOR_AZUL); }
+static inline void COLOR_AZUL_LOW (void){ COLOR_GPIO1->BRR  = (1u<<COLOR_AZUL); }
+static inline void COLOR_VERDE_HIGH(void){ COLOR_GPIO1->BSRR = (1u<<COLOR_VERDE); }
+static inline void COLOR_VERDE_LOW (void){ COLOR_GPIO1->BRR  = (1u<<COLOR_VERDE); }
 
 /* ===================== MAIN ===================== */
 int main(void)
@@ -281,19 +258,10 @@ int main(void)
     I2C1_Init_100kHz();
     TCS34725_Begin(0xEBu, 0x01u); /* ~50 ms, 4x */
 
-    /* ADC PB0 (LM35/OKY3066-2) */
-    ADC_init_PB0();
-
-    /*SALIDAS LATCH */
     OUTS_Init();
-
-    /*USART1 INIT */
-    USART1_Init();
 
     while (1)
     {
-        /* Lecturas */
-        tempC = readTemp(16);
         TCS34725_GetRGB((int*)&red, (int*)&green, (int*)&blue);
 
         /* Clasificador simple */
@@ -302,67 +270,28 @@ int main(void)
         else if (blue  >  80 && red   < 100 && green < 100) colorID = 3;
         else colorID = 0;
 
-        /* ======= SALIDAS LATCH ======= */
-        /* TEMP_OUT (PC15): HIGH si tempC > 22.0 */
-        if (tempC > 25.0f) {
-            TEMP_OUT_HIGH();
-            //USART1_WriteFloatCelsius(tempC);
-        } else {
-            TEMP_OUT_LOW();
-        }
-
         /* COLOR_OUT (PC12): HIGH si hay color detectado */
         if (colorID > 0) {
             COLOR_OUT_HIGH();
-            //USART1_WriteColorID(colorID);
+            if (colorID == 1){
+                COLOR_ROJO_HIGH();
+                COLOR_VERDE_LOW();
+                COLOR_AZUL_LOW();
+            } else if (colorID == 2){
+                COLOR_VERDE_HIGH();
+                COLOR_ROJO_LOW();
+                COLOR_AZUL_LOW();
+            } else if (colorID == 3) {
+                COLOR_AZUL_HIGH();
+                COLOR_VERDE_LOW();
+                COLOR_ROJO_LOW();
+            }
         } else {
             COLOR_OUT_LOW();
-        }
-        /* ============================= */
-
-        //DelayMs(5);
-
-		bytes_in_terminal = USART1_AvailableBytes();
-
-        if (bytes_in_terminal >= 2) {
-            uint8_t cmd     = USART1_ReadByte();
-            uint8_t sub_cmd = USART1_ReadByte();
-
-
-            response[0] = ACKNOWLEDGE;
-            response[1] = cmd;
-            response[2] = sub_cmd;
-
-            // --- Responder según el comando recibido ---
-            if (cmd == C_TEMPERATURE && sub_cmd == RETRIEVE_TEMP) {
-            	uint8_t tempInt = (uint8_t)tempC; // → 23
-            	response[3] = tempInt;
-
-            	USART1_SendByte(response[0]);
-            	USART1_SendByte(response[1]);
-            	USART1_SendByte(response[2]);
-            	USART1_SendByte(response[3]);
-            }
-            else if (cmd == C_COLOR && sub_cmd == RETRIEVE_COLOR) {
-            	switch (colorID) {
-					case 1:
-						response[3] = (uint8_t)COLOR_RED;
-						break;
-					case 2:
-						response[3] = (uint8_t)COLOR_GREEN;
-						break;
-					case 3:
-						response[3] = (uint8_t)COLOR_BLUE;
-						break;
-					default:
-						response[3] = (uint8_t)COLOR_INVALID;
-						break;
-				}
-            	USART1_SendByte(response[0]);
-            	USART1_SendByte(response[1]);
-            	USART1_SendByte(response[2]);
-            	USART1_SendByte(response[3]);
-            }
+            COLOR_ROJO_LOW();
+            COLOR_AZUL_LOW();
+            COLOR_VERDE_LOW();
         }
     }
 }
+
