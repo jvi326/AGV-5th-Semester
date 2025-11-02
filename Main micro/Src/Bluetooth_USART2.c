@@ -388,7 +388,7 @@ uint8_t arrayToArrayIntOrFloat(volatile NumberArray* numbersAsArray, uint8_t num
 
 		numero = atof(numbersAsArray[i].array, numbersAsArray[i].length);
 
-		if (i < 2){
+		if ((i < 2) || (i > 3)){
 			result[i].i = (int)numero;
 		} else {
 			result[i].f = numero;

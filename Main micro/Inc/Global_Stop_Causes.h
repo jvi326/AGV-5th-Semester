@@ -1,7 +1,7 @@
 /*
  * Global_Stop_Causes.h
  * Definiciones para causas de paro (Stop Flags)
- * Pines PC11–PC15 con detección de flancos.
+ * Pines PC11–PC15 y PA5, PA7 con detección de flancos.
  */
 
 #ifndef GLOBAL_STOP_CAUSES_H_
@@ -12,31 +12,41 @@
 // === Pines y líneas EXTI ===
 #define BT_DISCONN_PIN        11
 #define DIS1_SENSOR_PIN       12
-#define DIS2_SENSOR_PIN       1
-#define TEMP_SENSOR_PIN       14
+#define DIS2_SENSOR_PIN       13
 #define COLOR_SENSOR_PIN      15
 
-#define BT_DISCONN_EXTI_LINE  (1 << BT_DISCONN_PIN)
-#define DIS1_SENSOR_EXTI_LINE (1 << DIS1_SENSOR_PIN)
-#define DIS2_SENSOR_EXTI_LINE (1 << DIS2_SENSOR_PIN)
-#define TEMP_SENSOR_EXTI_LINE (1 << TEMP_SENSOR_PIN)
+#define RED_PIN               14  // PC14
+#define GREEN_PIN              5  // PA5
+#define BLUE_PIN               7  // PA7
+
+// Líneas EXTI correspondientes
+#define BT_DISCONN_EXTI_LINE   (1 << BT_DISCONN_PIN)
+#define DIS1_SENSOR_EXTI_LINE  (1 << DIS1_SENSOR_PIN)
+#define DIS2_SENSOR_EXTI_LINE  (1 << DIS2_SENSOR_PIN)
 #define COLOR_SENSOR_EXTI_LINE (1 << COLOR_SENSOR_PIN)
+#define RED_EXTI_LINE          (1 << RED_PIN)
+#define GREEN_EXTI_LINE        (1 << GREEN_PIN)
+#define BLUE_EXTI_LINE         (1 << BLUE_PIN)
 
 // === Estructuras ===
 typedef struct {
     uint8_t bluetooth_flag;
     uint8_t distance1_flag;
     uint8_t distance2_flag;
-    uint8_t temperature_flag;
     uint8_t color_flag;
+    uint8_t red_flag;
+    uint8_t green_flag;
+    uint8_t blue_flag;
 } StopFlags_t;
 
 typedef struct {
     uint8_t bluetooth_Fail_cmd;
     uint8_t distance1_Fail_cmd;
     uint8_t distance2_Fail_cmd;
-    uint8_t temperature_Fail_cmd;
     uint8_t color_Fail_cmd;
+    uint8_t red_Fail_cmd;
+    uint8_t green_Fail_cmd;
+    uint8_t blue_Fail_cmd;
 } Treat_Failure_Flags_t;
 
 // === Variables externas ===
@@ -46,5 +56,6 @@ extern volatile int error_0_counter;
 
 // === Funciones públicas ===
 void StopCauses_Init(void);
+void Update_ColorFlags(void);
 
 #endif /* GLOBAL_STOP_CAUSES_H_ */

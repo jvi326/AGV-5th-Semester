@@ -58,6 +58,7 @@ float temp_D = 0.45;
 
 volatile uint8_t current_temperature = 0;
 volatile uint8_t current_color = 0;
+volatile uint8_t compare_color = 0;
 Stop* currentStop;
 
 volatile uint8_t bytes_in_terminal;
@@ -71,7 +72,6 @@ int main(void) {
 	USART2_Init_Interrupt();
 	System_Ready_Indicator();
 	StopCauses_Init();
-	SysTick_Init();
 
 	UART_SetRole(ROLE_MASTER);   // define el rol
     USART1_Init();               // inicializa UART
@@ -90,7 +90,7 @@ int main(void) {
 	LineFollower Follower = {IR_MostOuterRight, IR_OuterRight, IR_CenterRight, IR_Center, IR_CenterLeft, IR_OuterLeft, IR_MostOuterLeft};
 	LineFollower_Init(&Follower);
 
-	Treat_Failure_Flags = (Treat_Failure_Flags_t){1,1,1,1,1};
+	Treat_Failure_Flags = (Treat_Failure_Flags_t){1,1,1,1,1,1,1};
 
    // Test sequence
     while (1) {
@@ -99,9 +99,9 @@ int main(void) {
 			USART2_HandleMessage(&agv);
 		}
 
-		if ((!emergencyStop) /*& stop_flags.bluetooth_flag*/ & (!stop_flags.distance1_flag) & (!stop_flags.distance2_flag) & (!stop_flags.temperature_flag) & (!stop_flags.color_flag)) {
+		if ((!emergencyStop) /*& stop_flags.bluetooth_flag*/ & (!stop_flags.distance1_flag) & (!stop_flags.distance2_flag) & (!stop_flags.color_flag)) {
 
-			Treat_Failure_Flags = (Treat_Failure_Flags_t){1,1,1,1,1};
+			Treat_Failure_Flags = (Treat_Failure_Flags_t){1,1,1,1,1,1,1};
 
 			if ((lineFollowerMode == 0)) {
 				apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
@@ -124,6 +124,7 @@ int main(void) {
 				pause_Chassis(&agv);
 			}
 
+			/*
 			if (WaitForAnswer == 0) { // Enviar solo una vez y esperar respuesta
 				pause_Chassis(&agv);
 			    if (stop_flags.temperature_flag && Treat_Failure_Flags.temperature_Fail_cmd)
@@ -137,10 +138,11 @@ int main(void) {
 			    	Master_RequestColor();
 			    	WaitForAnswer = 1;
 			    }
-			}
+			} */
 
-			bytes_in_terminal = USART1_AvailableBytes();
+			/* bytes_in_terminal = USART1_AvailableBytes(); */
 
+			/*
 			if ((WaitForAnswer == 1) && (bytes_in_terminal >= 4)) {
 				pause_Chassis(&agv);
 			    for (uint8_t i = 0; i < 4; i++)
@@ -173,30 +175,45 @@ int main(void) {
 
 			    USART1_ClearBuffer();  // limpia cualquier residuo
 			}
+			*/
 
 			if (lineFollowerMode == 1 && stop_flags.color_flag) {
-				currentStop = &Paradas[currentStopIndex];
 
-				// Si el color detectado coincide con el color de la parada actual
-				if (current_color == currentStop->color)
-				{
-					for(volatile int i=0;i<8000;i++);  // Delay ~10s
-					apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
+				Update_ColorFlags();
+				int k = -1; // índice de la parada que se revisará
 
-					// Pasar a la siguiente parada (si hay más)
-					if (currentStopIndex < NUM_PARADAS - 1)
-					{
-						currentStopIndex++;
-					}
-					else
-					{
-						currentStopIndex = 0; //volver a iniciar el ciclo de paradas
-					}
+				if (stop_flags.red_flag) {
+				    current_color = COLOR_RED; // rojo
+				    k = 0; // primera instancia
+				} else if (stop_flags.green_flag) {
+				    current_color = COLOR_GREEN; // verde
+				    k = 1; // segunda instancia
+				} else if (stop_flags.blue_flag) {
+				    current_color = COLOR_BLUE; // azul
+				    k = 2; // tercera instancia
+				} else {
+				    current_color = COLOR_INVALID; // sin color detectado
+				    break;
 				}
-				else
-				{
+
+			    // Solo si hay un color válido
+			    if (k >= 0 && k < NUM_PARADAS) {
+			        // Revisar el tercer valor (waitFlag)
+			        if (Paradas[k].waitFlag == 1) {
+			        	//CASO 1: Color si debe esperar
+			        	pause_Chassis(&agv);
+			        } else {
+			        	//CASO 2: Color debe seguir
+				    	set_AdvanceSpeed(&agv, 0.15);
+						set_TurnSpeed(&agv, 0);
+						apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
+			        }
+			    } else {
+			    	//CASO 3: Color no valido
+			    	set_AdvanceSpeed(&agv, 0.15);
+					set_TurnSpeed(&agv, 0);
 					apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
-				}
+			    }
 			}
 
 		}
