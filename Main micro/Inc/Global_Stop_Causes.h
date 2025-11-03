@@ -12,7 +12,7 @@
 // === Pines y líneas EXTI ===
 #define BT_DISCONN_PIN        11
 #define DIS1_SENSOR_PIN       12
-#define DIS2_SENSOR_PIN       13
+//#define DIS2_SENSOR_PIN       13
 #define COLOR_SENSOR_PIN      15
 
 #define RED_PIN               14  // PC14
@@ -22,7 +22,7 @@
 // Líneas EXTI correspondientes
 #define BT_DISCONN_EXTI_LINE   (1 << BT_DISCONN_PIN)
 #define DIS1_SENSOR_EXTI_LINE  (1 << DIS1_SENSOR_PIN)
-#define DIS2_SENSOR_EXTI_LINE  (1 << DIS2_SENSOR_PIN)
+//#define DIS2_SENSOR_EXTI_LINE  (1 << DIS2_SENSOR_PIN)
 #define COLOR_SENSOR_EXTI_LINE (1 << COLOR_SENSOR_PIN)
 #define RED_EXTI_LINE          (1 << RED_PIN)
 #define GREEN_EXTI_LINE        (1 << GREEN_PIN)

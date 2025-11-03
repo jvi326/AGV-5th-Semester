@@ -61,7 +61,6 @@ void set_BrakeMode(CHASSIS* AGV_Chassis);
 void set_CoastMode(CHASSIS* AGV_Chassis);
 void stop_Chassis(CHASSIS* AGV_Chassis);
 void pause_Chassis(CHASSIS* AGV_Chassis);
-void pause_Chassis_with_STOP(CHASSIS* AGV_Chassis);
 void SoftStart_Chassis(CHASSIS* chassis, float targetAdvance, float targetTurn, float rampTimeMs, float stepDelayMs);
 
 //Status functions
