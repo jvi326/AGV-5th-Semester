@@ -37,7 +37,7 @@ bool dis_detected;
 int  lineFollowerMode = 0;
 
 float forward_speed_LF = 0; // Choose based on desired speed (0.0 to 1.0)
-float temp_P = 0.15f;
+float temp_P = 0.1f;
 float temp_I = 0.0f;
 float temp_D = 0.45f;
 
@@ -68,8 +68,8 @@ void cr_get_rgb_flags(uint8_t* r, uint8_t* g, uint8_t* b) {
 // Lee directamente PB12 (IR central). Ajusta el sentido si tu sensor es activo-bajo.
 static inline void RefreshCenterIR(void){
    sensorStates[3] = ( (GPIOB->IDR & (1u << 12)) != 0 );  // 1 = línea detectada
-
 }
+
 int main(void) {
     USART2_Init_Interrupt();
     System_Ready_Indicator();
@@ -141,7 +141,7 @@ int main(void) {
 
         } else {
             if ( (stop_flags.distance1_flag) || (stop_flags.distance2_flag) ) {
-                pause_Chassis(&agv);
+            	pause_Chassis_with_STOP(&agv);
             }
 
             /*
@@ -197,6 +197,7 @@ int main(void) {
             }
             */
 
+            /*
             // BLOQUE VIEJO DE COLOR: protégelo para que no choque con la receta
             if ( !cr_is_busy() && (lineFollowerMode == 1) && stop_flags.color_flag ) {
 
@@ -222,7 +223,7 @@ int main(void) {
                     // Revisar el tercer valor (waitFlag)
                     if (Paradas[k].waitFlag == 1) {
                         // CASO 1: Color si debe esperar
-                        pause_Chassis(&agv);
+                    	pause_Chassis_with_STOP(&agv);
                     } else {
                         // CASO 2: Color debe seguir
                         set_AdvanceSpeed(&agv, 0.15f);
@@ -236,6 +237,7 @@ int main(void) {
                     apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
                 }
             }
+            */
         }
     }
 }

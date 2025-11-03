@@ -34,14 +34,17 @@ int BT_ApplyCsvConfig_fromRxBuf(const volatile uint8_t* rx, uint16_t nbytes){
     float sp   =       v[2];
     int   mask = (int)v[3];
 
-    if (mode<0) mode=0; if (mode>2) mode=2;
+    if (mode<0) mode=0;
+    if (mode>2) mode=2;
     if (lineFollowerMode != mode) justEnteredLineMode = 1;
     lineFollowerMode = mode;
 
-    if (sp<0.0f) sp=0.0f; if (sp>1.0f) sp=1.0f;
+    if (sp<0.0f) sp=0.0f;
+    if (sp>1.0f) sp=1.0f;
     forward_speed_LF = sp;
 
-    if (mask<0) mask=0; if (mask>7) mask=7;
+    if (mask<0) mask=0;
+    if (mask>7) mask=7;
     cr_set_mask((uint8_t)mask);
     cr_set_wait_ms(10000u);          // 10 s
 

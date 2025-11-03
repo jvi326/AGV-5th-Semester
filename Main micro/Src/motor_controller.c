@@ -127,6 +127,11 @@ void Motor_SetSpeed(MotorController* motor, float speed) {
     }
 }
 
+void Motor_SetBreak_BridgeH(MotorController* motor) {
+	setPWM(motor, 0.99);
+	setNoDirection(motor);
+}
+
 void Motor_SetSpeed_noBreak_if_0(MotorController* motor, float speed) {
     // Constrain speed
     speed = (speed < -1.0) ? -1.0 : (speed > 1.0) ? 1.0 : speed;
