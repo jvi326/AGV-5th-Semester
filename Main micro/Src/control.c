@@ -31,7 +31,7 @@ const float PPR   = 1548.0f;     // pulsos por revolución
 const uint16_t DUTY_MIN  = 40;   // ~4% de 1023 (piso normal del control)
 
 /* ===== Arranque coordinado ===== */
-#define START_KICK_PWM   230   // patada fuerte común (180–260 según fricción)
+#define START_KICK_PWM   200   // patada fuerte común (180–260 según fricción)
 #define HOLD_PWM          80   // sostén para el que ya giró (60–120)
 #define START_THR_RPM      5   // umbral para considerar “ya gira” (3–8)
 #define START_KICKS        3   // ciclos de patada simultánea (3*100ms = 300ms)
@@ -42,14 +42,14 @@ uint8_t  start_kicks_ctr = START_KICKS;
 uint16_t start_timeout   = START_TIMEOUT;
 
 /* ===== Setpoint de prueba ===== */
-float rpm_des1 = 30.0f;  // + adelante, - atrás
-float rpm_des2 = 10.0f;
+float rpm_des1 = 120.0f;  // + adelante, - atrás
+float rpm_des2 = 120.0f;
 
 /* ===== Motor 1 (TIM1 + PC10/PC11/PC9) ===== */
 int16_t counter1, deltaNp1;
 float   rpm1 = 0.0f, rpm_f1 = 0.0f;
 float   e1 = 0.0f, inte1 = 0.0f, u1 = 0.0f;
-const float kp1 = 8.0f, beta1 = 2.0f, b_est1 = 33.300268f;
+const float kp1 = 10.0f, beta1 = 2.0f, b_est1 = 33.300268f;
 
 /* ===== Motor 2 (TIM2 + PC6/PC7/PC8) ===== */
 int16_t counter2, deltaNp2;
@@ -64,10 +64,10 @@ const float MIN_RPM_VALID = 10.0f;
 const float ALPHA = 0.4f;            // filtro exponencial (más suave que 0.7)
 
 /* ====== Parche B: PI de rectitud (trim en duty) ====== */
-float syncKp = 15.0f;                 // duty por rpm de diferencia
-float syncKi = 4.0f;                 // duty por rpm*s
+float syncKp = 2.0f;                 // duty por rpm de diferencia
+float syncKi = 0.2f;                 // duty por rpm*s
 float syncInt = 0.0f;
-const float syncDt = 0.01f;           // 100 ms
+const float syncDt = 0.1f;           // 100 ms
 const float syncIlim = 400.0f;
 
 /* ====== Parche C: Slew-rate (rampa de duty) ====== */

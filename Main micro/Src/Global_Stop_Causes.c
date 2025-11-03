@@ -19,7 +19,7 @@ void StopCauses_Init(void) {
     GPIOC->MODER &= ~(
         (3 << (BT_DISCONN_PIN * 2)) |
         (3 << (DIS1_SENSOR_PIN * 2)) |
-        (3 << (DIS2_SENSOR_PIN * 2)) |
+		//        (3 << (DIS2_SENSOR_PIN * 2)) |
         (3 << (COLOR_SENSOR_PIN * 2)) |
         (3 << (RED_PIN * 2))
     );
@@ -27,14 +27,14 @@ void StopCauses_Init(void) {
     GPIOC->PUPDR &= ~(
         (3 << (BT_DISCONN_PIN * 2)) |
         (3 << (DIS1_SENSOR_PIN * 2)) |
-        (3 << (DIS2_SENSOR_PIN * 2)) |
+		//        (3 << (DIS2_SENSOR_PIN * 2)) |
         (3 << (COLOR_SENSOR_PIN * 2)) |
         (3 << (RED_PIN * 2))
     );
     GPIOC->PUPDR |= (
         (2 << (BT_DISCONN_PIN * 2)) |
         (2 << (DIS1_SENSOR_PIN * 2)) |
-        (2 << (DIS2_SENSOR_PIN * 2)) |
+		//        (2 << (DIS2_SENSOR_PIN * 2)) |
         (2 << (COLOR_SENSOR_PIN * 2)) |
         (2 << (RED_PIN * 2))
     ); // Pull-down interno
@@ -65,7 +65,7 @@ void StopCauses_Init(void) {
 
     // --- Activar detección por flancos de subida y bajada ---
     uint32_t lines = (BT_DISCONN_EXTI_LINE | DIS1_SENSOR_EXTI_LINE |
-                      DIS2_SENSOR_EXTI_LINE | COLOR_SENSOR_EXTI_LINE);
+                      /*DIS2_SENSOR_EXTI_LINE |*/ COLOR_SENSOR_EXTI_LINE);
 
     EXTI->IMR  |= lines;   // habilita interrupciones
     EXTI->RTSR |= lines;   // flanco de subida
@@ -90,12 +90,13 @@ void EXTI4_15_IRQHandler(void) {
         EXTI->PR |= DIS1_SENSOR_EXTI_LINE;
         stop_flags.distance1_flag = (GPIOC->IDR >> DIS1_SENSOR_PIN) & 1;
     }
-
+    /*
     // --- Distance 2 Sensor (PC13) ---
     if (pending & DIS2_SENSOR_EXTI_LINE) {
         EXTI->PR |= DIS2_SENSOR_EXTI_LINE;
         stop_flags.distance2_flag = (GPIOC->IDR >> DIS2_SENSOR_PIN) & 1;
     }
+    */
 
     // --- Color Detection (PC15) ---
     if (pending & COLOR_SENSOR_EXTI_LINE) {

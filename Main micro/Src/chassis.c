@@ -145,12 +145,6 @@ void pause_Chassis(CHASSIS* AGV_Chassis) {
 	Motor_SetSpeed(&AGV_Chassis->wheelRight, 0);
 }
 
-void pause_Chassis_with_STOP(CHASSIS* AGV_Chassis) {
-	// Apply speed 0 to motors withouth altering the current speeds
-	Motor_SetBreak_BridgeH(&AGV_Chassis->wheelLeft);
-	Motor_SetBreak_BridgeH(&AGV_Chassis->wheelRight);
-}
-
 //Status functions
 float get_CurrentChassisAdvanceSpeed(const CHASSIS* AGV_Chassis){
 	return AGV_Chassis->currentAdvanceSpeed;
