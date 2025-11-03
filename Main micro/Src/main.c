@@ -116,24 +116,6 @@ int main(void) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
    // Test sequence
     while (1) {
 
@@ -141,7 +123,7 @@ int main(void) {
 			USART2_HandleMessage(&agv);
 		}
 
-		if ((!emergencyStop) /*& stop_flags.bluetooth_flag*/ & (!stop_flags.distance1_flag) & (!stop_flags.distance2_flag) & (!stop_flags.color_flag)) {
+		if ((!emergencyStop) & stop_flags.bluetooth_flag & (!stop_flags.distance1_flag) & (!stop_flags.distance2_flag) & (!stop_flags.color_flag)) {
 
 			Treat_Failure_Flags = (Treat_Failure_Flags_t){1,1,1,1,1,1,1};
 

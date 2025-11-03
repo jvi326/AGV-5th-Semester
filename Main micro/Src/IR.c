@@ -166,9 +166,9 @@ void LineFollower_FollowLine_PID(LineFollower* LineFollower, CHASSIS* chassis, f
     }
 
     // 5️⃣ Send debug info
-    USART2_SendSensorData(sensorStates, 7, error, total);
-    USART2_SendFloat(leftSpeed, 2);
-    USART2_SendFloat(rightSpeed, 2);
+    //USART2_SendSensorData(sensorStates, 7, error, total);
+    //USART2_SendFloat(leftSpeed, 2);
+    //USART2_SendFloat(rightSpeed, 2);
 }
 
 void resetPID() {
