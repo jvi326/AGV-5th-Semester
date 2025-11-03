@@ -117,7 +117,7 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
 
 
     // 7️⃣ Send debug info
-    USART2_SendSensorData(sensorStates, 7, error, total);
+    //USART2_SendSensorData(sensorStates, 7, error, total);
 }
 
 
