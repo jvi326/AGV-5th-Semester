@@ -96,8 +96,8 @@ void USART2_IRQHandler(void){
 void USART2_HandleMessage(CHASSIS* AGV_Chassis) {
 
 
-	USART2_SendString("Echo: ");
-	USART2_SendString((char*)rx_buf);
+	//USART2_SendString("Echo: ");
+	//USART2_SendString((char*)rx_buf);
 
 	uint8_t numArrays = parseCSV(rx_buf, rx_pos, parsedArrays);
 	uint8_t numArrayIntFloat = arrayToArrayIntOrFloat(parsedArrays, numArrays, indicacionesArray);
@@ -381,10 +381,10 @@ uint8_t arrayToArrayIntOrFloat(volatile NumberArray* numbersAsArray, uint8_t num
 
 	// Process the parsed arrays
 	for (uint8_t i = 0; i < numberOfArrays; i++) {
-		USART2_SendString("Number ");
-		USART2_SendChar('0' + i);
-		USART2_SendString(": ");
-		USART2_SendString((const char*)numbersAsArray[i].array);
+		//USART2_SendString("Number ");
+		//USART2_SendChar('0' + i);
+		//USART2_SendString(": ");
+		//USART2_SendString((const char*)numbersAsArray[i].array);
 
 		numero = atof(numbersAsArray[i].array, numbersAsArray[i].length);
 
