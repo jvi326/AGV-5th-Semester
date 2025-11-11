@@ -27,6 +27,7 @@
 #include "uart_commands.h"
 #include "stops.h"
 #include "control.h"
+#include "temp_uart2.h"
 
 uint32_t SystemCoreClock = 8000000;  // define la frecuencia
 
@@ -79,13 +80,6 @@ volatile uint32_t run_wait_deadline = 0;
 
 
 
-
-
-
-
-
-
-
 int main(void) {
 	USART2_Init_Interrupt();
 	System_Ready_Indicator();
@@ -112,20 +106,8 @@ int main(void) {
 
 	control_init();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    USART2_Init_Interrupt();   // Tu init existente (PA2/PA3 a 9600)
+    Temp_Init();               // SysTick + ADC PB0 + PC15 + "TEMP READY"
 
 
 
@@ -136,6 +118,7 @@ int main(void) {
 
    // Test sequence
     while (1) {
+    	Temp_Task_200ms();
 
     	if (rx_ready == 1) {
 			USART2_HandleMessage(&agv);
@@ -162,7 +145,7 @@ int main(void) {
 				    resetPID();  // integral = 0, last_error = 0
 				    justEnteredLineMode = 0;
 				}
-				apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
+				//apply_CurrentSpeedsToMotors_noBrake_if_0(&agv);
 				LineFollower_FollowLine(&Follower, &agv, forward_speed_LF);
 			} else if (lineFollowerMode == 2) {
 				if (justEnteredLineMode) {
@@ -284,6 +267,8 @@ int main(void) {
 				// 1) ¿se acabó la ventana de 10 s?
 				if ((int32_t)(millis() - run_wait_deadline) >= 0) {
 					wait_enabled = 0;
+
+					control_reset_all();
 					run_enabled = 1;
 					run_deadline = millis() + 4000u;  // 40 s
 				}
