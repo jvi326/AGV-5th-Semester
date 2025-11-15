@@ -28,6 +28,7 @@
 #include "stops.h"
 #include "control.h"
 #include "temp_uart2.h"
+#include "Physical_buttons.h"
 
 uint32_t SystemCoreClock = 8000000;  // define la frecuencia
 
@@ -75,9 +76,8 @@ volatile uint32_t run_deadline = 0;
 volatile uint8_t  wait_enabled = 0;
 volatile uint32_t run_wait_deadline = 0;
 
-
-
-
+volatile uint8_t modo;
+volatile uint8_t colores[3];
 
 
 int main(void) {
@@ -109,6 +109,7 @@ int main(void) {
     USART2_Init_Interrupt();   // Tu init existente (PA2/PA3 a 9600)
     Temp_Init();               // SysTick + ADC PB0 + PC15 + "TEMP READY"
 
+    INPUTS_Init();
 
 
 
@@ -124,7 +125,10 @@ int main(void) {
 			USART2_HandleMessage(&agv);
 		}
 
-		if ((!emergencyStop) /*& stop_flags.bluetooth_flag*/ & (!stop_flags.distance1_flag) & (!stop_flags.distance2_flag) & (!stop_flags.color_flag)) {
+
+        modo = GetModoManual();   // 0 o 1
+
+		if ((!emergencyStop) /* & stop_flags.bluetooth_flag */ & (!stop_flags.distance1_flag) & (!stop_flags.distance2_flag) & (!stop_flags.color_flag) & (!modo)) {
 
 			Treat_Failure_Flags = (Treat_Failure_Flags_t){1,1,1,1,1,1,1};
 
@@ -159,58 +163,15 @@ int main(void) {
 				pause_Chassis(&agv);
 			}
 
-			/*
-			if (WaitForAnswer == 0) { // Enviar solo una vez y esperar respuesta
-				pause_Chassis(&agv);
-			    if (stop_flags.temperature_flag && Treat_Failure_Flags.temperature_Fail_cmd)
-			    {
-			        // Enviar comando de temperatura
-			    	Master_RequestTemperature();
-			    	WaitForAnswer = 1;
-			    } else if (stop_flags.color_flag && Treat_Failure_Flags.color_Fail_cmd)
-			    {
-			        // Enviar comando de color
-			    	Master_RequestColor();
-			    	WaitForAnswer = 1;
-			    }
-			} */
+			if (modo) {
+				GetColorInputs(colores);
 
-			/* bytes_in_terminal = USART1_AvailableBytes(); */
+				Paradas[0].waitFlag = colores[0];
+				Paradas[1].waitFlag = colores[1];
+				Paradas[2].waitFlag = colores[2];
 
-			/*
-			if ((WaitForAnswer == 1) && (bytes_in_terminal >= 4)) {
-				pause_Chassis(&agv);
-			    for (uint8_t i = 0; i < 4; i++)
-			        frame[i] = USART1_ReadByte();   // leer realmente los bytes (no peek)
-
-			    uint8_t ack     = frame[0];
-			    uint8_t cmd     = frame[1];
-			    uint8_t sub_cmd = frame[2];
-			    uint8_t data    = frame[3];
-
-			    if (ack == ACKNOWLEDGE)
-			    {
-			        if (cmd == C_TEMPERATURE)
-			        {
-			        	if (sub_cmd == RETRIEVE_TEMP){
-			        		current_temperature = data;
-			        		Treat_Failure_Flags.temperature_Fail_cmd = 0;
-			        	}
-			        } else if (cmd == C_COLOR)
-			        {
-			        	if (sub_cmd == RETRIEVE_COLOR){
-			        		current_color = data;
-			        		Treat_Failure_Flags.color_Fail_cmd = 0;
-			        	}
-			        }
-
-			        WaitForAnswer = 0;
-
-			    }
-
-			    USART1_ClearBuffer();  // limpia cualquier residuo
 			}
-			*/
+
 
 			if (lineFollowerMode == 1 && stop_flags.color_flag) {
 
