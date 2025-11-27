@@ -1,6 +1,8 @@
 #include "ultrasonic.h"
 #include "uart_commands.h"
 #include "globals.h"
+#include "ws2812.h"
+
 
 #define TRIG1_PIN  18
 #define ECHO1_PIN  19
@@ -61,6 +63,10 @@ void setup() {
     uart_write_bytes(UART_NUM, (const char*)startup_bytes, sizeof(startup_bytes));
     Serial.println("Startup bytes sent on UART2");
 
+    WS2812_Init();
+
+      WS2812_SetTwoColors(39, 40, strip.Color(0,255,0), strip.Color(0,255,0));
+
     Serial.println("Ready!");
 }
 
@@ -84,6 +90,7 @@ void loop() {
   }
 
   if(ext_trig1 == 1 || ext_trig2 == 1){
+    WS2812_SetTwoColors(39, 40, strip.Color(255,0,0), strip.Color(255,0,0));
     PlayBuzzerPattern(); //Encender Buzzer
     if(ext_trig1 == 1){
       Serial.print("Extern trig_1: ");
@@ -99,6 +106,8 @@ void loop() {
       Serial.println(d2);
       ext_trig2 = 0;
     }
+  } else {
+    WS2812_SetTwoColors(39, 40, strip.Color(0,255,0), strip.Color(0,255,0));
   }
 
   if(new_threshold == 1) {
