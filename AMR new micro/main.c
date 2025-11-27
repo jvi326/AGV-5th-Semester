@@ -286,8 +286,8 @@ void navigation_step(float Ts)
     float omega_cmd = 0.0f;
 
     // Histeresis angular
-    const float ang_tol_align   = 0.25f;  //
-    const float ang_tol_realign = 1.20f;;  //
+    const float ang_tol_align   = 0.25f;  // ~14°
+    const float ang_tol_realign = 0.80f;  // ~46°
 
     // --- Si estamos avanzando y el error se hizo MUY grande -> regresar a alinear ---
     if (nav_state == NAV_GO && fabsf(err_theta) > ang_tol_realign) {
@@ -375,20 +375,8 @@ void function(void)
     s_traj += S_STEP;
 
 
-   // x_ref = s_traj;
-  //  y_ref = s_traj;
-
-    // ----- Parámetros del círculo -----
-    const float R_CIRC = 0.5f;          // radio del círculo [m]
-    const float XC     = R_CIRC;        // centro del círculo en X
-    const float YC     = 0.0f;          // centro del círculo en Y
-
-    // Distancia → ángulo (no usamos fmod, que crezca libremente)
-    float phi = s_traj / R_CIRC;        // [rad] (s = R * phi)
-
-    // Punto objetivo sobre el círculo
-    x_ref = XC + R_CIRC * cosf(phi);
-    y_ref = YC + R_CIRC * sinf(phi);
+    x_ref = s_traj;
+    y_ref = s_traj;
 }
 
 
