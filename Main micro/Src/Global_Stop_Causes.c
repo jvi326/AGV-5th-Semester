@@ -79,7 +79,7 @@ void StopCauses_Init(void) {
 void EXTI4_15_IRQHandler(void) {
     uint32_t pending = EXTI->PR;
 
-    // --- Bluetooth Disconnect (PC11) ---
+    // --- Bluetooth Disconnect (PC13) ---
     if (pending & BT_DISCONN_EXTI_LINE) {
         EXTI->PR |= BT_DISCONN_EXTI_LINE;
         stop_flags.bluetooth_flag = (GPIOC->IDR >> BT_DISCONN_PIN) & 1;

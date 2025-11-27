@@ -10,7 +10,7 @@
 #include "stm32f051x8.h"
 
 // === Pines y líneas EXTI ===
-#define BT_DISCONN_PIN        11
+#define BT_DISCONN_PIN        13
 #define DIS1_SENSOR_PIN       12
 //#define DIS2_SENSOR_PIN       13
 #define COLOR_SENSOR_PIN      15

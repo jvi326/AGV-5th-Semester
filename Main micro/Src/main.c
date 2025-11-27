@@ -77,10 +77,12 @@ volatile uint8_t  wait_enabled = 0;
 volatile uint32_t run_wait_deadline = 0;
 
 volatile uint8_t modo;
+volatile uint8_t past_modo;
 volatile uint8_t colores[3];
 
 
 int main(void) {
+
 	USART2_Init_Interrupt();
 	System_Ready_Indicator();
 	StopCauses_Init();
@@ -132,6 +134,11 @@ int main(void) {
 
 			Treat_Failure_Flags = (Treat_Failure_Flags_t){1,1,1,1,1,1,1};
 
+			if ((past_modo == 1) & (modo == 0)){
+				lineFollowerMode = 0;
+				past_modo = 0;
+			}
+
 			if(run_enabled == 1) {
 				control_reset_all();               // <—— LIMPIA TODO ANTES DE EMPEZAR
 				run_enabled = 0;
@@ -163,13 +170,17 @@ int main(void) {
 				pause_Chassis(&agv);
 			}
 
-			if (modo) {
+			if ((!emergencyStop) /* & stop_flags.bluetooth_flag */ & (!stop_flags.distance1_flag) & (!stop_flags.distance2_flag) & (!stop_flags.color_flag) & (modo)) {
 				GetColorInputs(colores);
 
 				Paradas[0].waitFlag = colores[0];
 				Paradas[1].waitFlag = colores[1];
 				Paradas[2].waitFlag = colores[2];
 
+				lineFollowerMode = 1;
+				past_modo = 1;
+
+				LineFollower_FollowLine(&Follower, &agv, 0.15);
 			}
 
 
