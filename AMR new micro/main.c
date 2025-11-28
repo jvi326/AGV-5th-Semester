@@ -2,6 +2,35 @@
 #include <math.h>
 #include "stm32f051x8.h"
 
+/* ==================== CONFIG GENERAL ==================== */
+#define SYSCLK_HZ 8000000u
+
+/* I2C1: PB6=SCL, PB7=SDA (AF1) PARA MPU6050 */
+#define I2C_SCL_PIN   6u
+#define I2C_SDA_PIN   7u
+
+/* MPU6050 regs */
+#define MPU_ADDR         0x68u
+#define REG_SMPLRT_DIV   0x19
+#define REG_CONFIG       0x1A
+#define REG_GYRO_CONFIG  0x1B
+#define REG_ACCEL_CONFIG 0x1C
+#define REG_INT_ENABLE   0x38
+#define REG_ACCEL_XOUT_H 0x3B
+#define REG_PWR_MGMT_1   0x6B
+
+/* Escalas físicas (±2 g, ±250 dps) */
+#define ACC_LSB_PER_G    16384.0f   // ±2 g
+#define GYR_LSB_PER_DPS  131.0f     // ±250 dps
+#define G0               9.80665f
+
+/* Ajuste de signos por orientación del módulo (ajusta si tu módulo está montado distinto) */
+#define GYRO_SIGN_X   (+1.0f)
+#define GYRO_SIGN_Y   (+1.0f)
+#define GYRO_SIGN_Z   (+1.0f)
+
+/* ==================== PROTOTIPOS EXISTENTES (ROBOT) ==================== */
+
 //Encoders
 void TIM1_Encoder_Init(void);   // Motor 1: PA8(A), PA9(B)
 void TIM2_Encoder_Init(void);   // Motor 2: PA0(A), PA1(B)
@@ -25,11 +54,44 @@ void setMotor1PWM2(int16_t pwm_value); // M1 Atrás
 void setMotor2PWM1(int16_t pwm_value); // M2 Adelante
 void setMotor2PWM2(int16_t pwm_value); // M2 Atrás
 
+/* ==================== PROTOTIPOS MPU6050 / I2C ==================== */
+static void i2c1_gpio_init(void);
+static void i2c1_init_100k(void);
+static void i2c1_write_reg(uint8_t dev7, uint8_t reg, uint8_t data);
+static void i2c1_read_bytes(uint8_t dev7, uint8_t reg, uint8_t *buf, uint8_t len);
+
+static void mpu_init(void);
+static void accel_calibrate_zero(uint16_t N);
+static void gyro_calibrate(uint16_t N);
+static void mpu_read_all(void);
+static void integrate_angles(float dt);
+
+/* Helpers MPU */
+static inline float wrap_deg_0_360(float a);
+static inline float clampf(float x, float lo, float hi);
+
+/* ==================== TIMEBASE ==================== */
 volatile uint32_t tick_count = 0;
+static volatile uint32_t g_ms = 0;
 
-uint32_t millis(void){ return tick_count; }
+uint32_t millis(void){
+    return tick_count;
+}
 
-void SysTick_Handler(void){ tick_count++; }
+void SysTick_Handler(void){
+    /* Se usan ambos contadores:
+       - g_ms para delay_ms (MPU)
+       - tick_count para millis() (navegación) */
+    g_ms++;
+    tick_count++;
+}
+
+static void delay_ms(uint32_t ms){
+    uint32_t t = g_ms;
+    while((g_ms - t) < ms){
+        __NOP();
+    }
+}
 
 void delay(uint32_t ms){
     uint32_t t = millis();
@@ -38,7 +100,21 @@ void delay(uint32_t ms){
     }
 }
 
-// ====== ESTADO DE NAVEGACIÓN ======
+/* ==================== DATOS MPU6050 ==================== */
+
+/* Datos crudos y escalados */
+static volatile float ax_g=0, ay_g=0, az_g=0;
+static volatile float gx_dps=0, gy_dps=0, gz_dps=0;
+static volatile float ax_mps2=0, ay_mps2=0, az_mps2=0;
+static float gx_bias=0, gy_bias=0, gz_bias=0;
+static int32_t ax_off=0, ay_off=0, az_off=0;
+
+/* Ángulos */
+volatile float yaw_deg=0.0f, pitch_deg=0.0f, roll_deg=0.0f;
+static volatile float yaw_mod_deg=0.0f, yaw_cum_deg=0.0f;
+volatile float angZ_deg = 0.0f;   // integral de ωz (heading en grados)
+
+/* ==================== ESTADO DE NAVEGACIÓN (ROBOT) ==================== */
 typedef enum {
     NAV_ALIGN = 0,   // primero solo girar al ángulo deseado
     NAV_GO    = 1    // luego avanzar hacia el punto
@@ -87,45 +163,55 @@ const float kp2 = 7.0f, ki2 = 3.0f, kd2 = 0.0f;
 float x_ref = 0.0f;   // [m] objetivo en X
 float y_ref = 0.0f;   // [m] objetivo en Y
 
-float kv = 1.0f;      // ganancia de velocidad lineal
-const float kw = 0.6f;      // ganancia de velocidad angular
+float kv = 0.7f;             // ganancia de velocidad lineal
+const float kw = 1.0f;       // ganancia de velocidad angular
 
 // Para que el giro (NAV_ALIGN) sea más suave
 const float kw_align        = 0.7f;  // ganancia angular sólo para alinearse
 const float omega_align_max = 0.6f;  // [rad/s] límite para el giro suave
 
 const float v_max     = 0.5f;   // [m/s] máx velocidad lineal
-const float v_min     = 0.2f;   // [m/s] máx velocidad lineal
+const float v_min     = 0.18f;  // [m/s] mín velocidad lineal útil
 const float omega_max = 1.5f;   // [rad/s] máx velocidad angular
 
-const float dist_tol  = 0.10f;  // [m] tolerancia de distancia al objetivo
+const float dist_tol  = 0.02f;  // [m] tolerancia de distancia al objetivo
 const float ang_tol   = 0.10f;  // [rad] (~3 grados) tolerancia de ángulo
 
-volatile float dist = 0.0f;     // [m]
-volatile float theta_goal = 0.0f;     // [rad]
+volatile float dist = 0.0f;         // [m]
+volatile float theta_goal = 0.0f;   // [rad] ÁNGULO OBJETIVO DEL TRAMO (CONSTANTE EN NAV_GO)
 
-
-const float S_STEP = 0.1f;   // 50 cm entre puntos
-static float s_traj = 0.0f;  // acumulado de trayectoria
-
-
-
-
+const float S_STEP = 0.05f;   // 5 cm entre puntos (0.05 m)
+static float s_traj = 0.0f;   // acumulado de trayectoria
 
 /* ====================== MAIN ====================== */
-int main(void)
-{
+int main(void) {
+    /* ======= INIT HARDWARE ROBOT ======= */
     TIM1_Encoder_Init();    // M1 encoder (derecha)
     TIM2_Encoder_Init();    // M2 encoder (izquierda)
     PWM_init_both();        // TIM3 CH3/CH4 + pines dirección
 
     // SysTick 1 ms @ 8 MHz
-    SysTick->LOAD = 8000 - 1;
+    SysTick->LOAD = (SYSCLK_HZ/1000u) - 1u;
     SysTick->VAL  = 0;
-    SysTick->CTRL = 0x07;
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk |
+                    SysTick_CTRL_TICKINT_Msk   |
+                    SysTick_CTRL_ENABLE_Msk;
 
     nav_state = NAV_ALIGN;   // al iniciar: primero alinear ángulo
 
+    /* ======= INIT MPU6050 (I2C) ======= */
+    i2c1_gpio_init();
+    i2c1_init_100k();
+    mpu_init();
+
+    /* Calibraciones (sensor quieto y horizontal) */
+    accel_calibrate_zero(300);   // Acel: X~0, Y~0, Z~+1g
+    gyro_calibrate(400);         // Gyro: ω~0 en reposo
+
+    /* Reset de ángulos */
+    yaw_deg = pitch_deg = roll_deg = 0.0f;
+    yaw_mod_deg = yaw_cum_deg = 0.0f;
+    angZ_deg = 0.0f;
 
     // Derivada filtrada (se quedan estáticas en el lazo)
     static float prev_e1 = 0.0f, prev_e2 = 0.0f;
@@ -157,29 +243,31 @@ int main(void)
             rpm2   = (deltaNp2 * 600.0f) / PPR;
             rpm_f2 = alpha * rpm2 + (1.0f - alpha) * rpm_f2;
 
-            /* ====== ODOMETRÍA (posición x, y, theta) ======
-             * Asumimos:
-             *  - Motor 1 (rpm_f1) = rueda DERECHA
-             *  - Motor 2 (rpm_f2) = rueda IZQUIERDA
+            /* ====== VELOCIDADES A PARTIR DE ENCODERS ====== */
+            float Wr = rpm_f1 * 2.0f * 3.14159265f / 60.0f;  // [rad/s] rueda derecha
+            float Wl = rpm_f2 * 2.0f * 3.14159265f / 60.0f;  // [rad/s] rueda izquierda
+
+            float v = R_WHEEL * 0.5f * (Wr + Wl);            // [m/s] velocidad lineal
+            omega  = R_WHEEL * (Wr - Wl) / L_AXLE;           // [rad/s] velocidad angular
+
+            /* ====== ACTUALIZAR ÁNGULO THETA CON MPU6050 (EJE Z) ======
+             * Se integra el giroscopio en Z dentro de integrate_angles().
+             * Aquí tomamos angZ_deg como heading del robot.
              */
-            float Wr = rpm_f1 * 2.0f * 3.14159265f / 60.0f;  // [rad/s]
-            float Wl = rpm_f2 * 2.0f * 3.14159265f / 60.0f;  // [rad/s]
+            mpu_read_all();           // lee ACC + GYRO
+            integrate_angles(Ts);     // integra giroscopio, actualiza angZ_deg
 
-            float v = R_WHEEL * 0.5f * (Wr + Wl);            // [m/s]
-            omega  = R_WHEEL * (Wr - Wl) / L_AXLE;           // [rad/s]
+            const float DEG2RAD = 3.14159265f / 180.0f;
+            theta = wrapToPi(angZ_deg * DEG2RAD);  // heading en rad usando eje Z del MPU
+            theta_deg = theta * 180.0f / 3.14159265f;
 
+            /* ====== ODOMETRÍA (posición x, y) USANDO THETA DEL MPU ====== */
             v_x = v * cosf(theta);
             v_y = v * sinf(theta);
 
             x_pos += v_x * Ts;
             y_pos += v_y * Ts;
-            theta += omega * Ts;
-
-            // Normalizar theta a [-pi, pi]
-            if (theta > 3.14159265f)        theta -= 2.0f * 3.14159265f;
-            else if (theta < -3.14159265f)  theta += 2.0f * 3.14159265f;
-
-            theta_deg = theta * 180.0f / 3.14159265f;
+            // theta ya viene del MPU, no se integra aquí con omega
 
             /* ====== NAVEGACIÓN (actualiza rpm_des1, rpm_des2) ====== */
             navigation_step(Ts);
@@ -248,15 +336,14 @@ int main(void)
             else if (rpm_des2 > 0.0f) setMotor2PWM1(du2);      // adelante
             else                      setMotor2PWM1(0);        // paro
 
-            // En Live Expressions:
-            // x_pos, y_pos, theta_deg, x_ref, y_ref, rpm_des1, rpm_des2, rpm_f1, rpm_f2
+            // En Live Expressions puedes ver:
+            // x_pos, y_pos, theta_deg, angZ_deg, x_ref, y_ref, rpm_des1, rpm_des2, rpm_f1, rpm_f2
         }
     }
 }
 
 /* ============== Función de navegación ============== */
-void navigation_step(float Ts)
-{
+void navigation_step(float Ts) {
     (void)Ts;
 
     // --- Estado anterior para detectar cambios de modo ---
@@ -268,16 +355,16 @@ void navigation_step(float Ts)
 
     dist = sqrtf(dx*dx + dy*dy);
 
-    // Ángulo deseado hacia el punto (respecto al mundo)
-    theta_goal = atan2f(dy, dx);
+    // Ángulo hacia el punto actual (respecto al mundo)
+    float theta_to_target = atan2f(dy, dx);
 
-    // Error angular respecto al robot
-    float err_theta = theta_goal - theta;
-    err_theta = wrapToPi(err_theta);
+    // Error angular respecto al robot (usando theta_goal, ver más abajo)
+    float err_theta = 0.0f;
 
-    // 1) ¿ya llegué a este punto?  -> SOLO usamos distancia YA QUE SI LE PONES ANGULO CON AND POCAS VECES ES VERDADERO
+    // 1) ¿ya llegué a este punto?
     if (dist < dist_tol) {
-        function();              // siguiente punto de la trayectoria
+        function();          // siguiente punto de la trayectoria
+        nav_state = NAV_ALIGN;   // IMPORTANTE: volver a alinearse para el nuevo tramo
         last_state = nav_state;
         return;
     }
@@ -287,12 +374,6 @@ void navigation_step(float Ts)
 
     // Histeresis angular
     const float ang_tol_align   = 0.25f;  // ~14°
-    const float ang_tol_realign = 0.80f;  // ~46°
-
-    // --- Si estamos avanzando y el error se hizo MUY grande -> regresar a alinear ---
-    if (nav_state == NAV_GO && fabsf(err_theta) > ang_tol_realign) {
-        nav_state = NAV_ALIGN;
-    }
 
     // --- Si CAMBIÓ el estado desde la última llamada, resetea el control ---
     if (nav_state != last_state) {
@@ -307,6 +388,12 @@ void navigation_step(float Ts)
 
     // ===== MODO 1: Alinear primero (solo giro, sin avanzar) =====
     if (nav_state == NAV_ALIGN) {
+        // AQUÍ sí actualizamos theta_goal hacia el punto ACTUAL
+        theta_goal = theta_to_target;
+
+        err_theta = theta_goal - theta;
+        err_theta = wrapToPi(err_theta);
+
         v_cmd     = 0.0f;
         omega_cmd = kw_align * err_theta;   // giro suave
 
@@ -322,6 +409,11 @@ void navigation_step(float Ts)
 
     // ===== MODO 2: Avanzar hacia el punto =====
     if (nav_state == NAV_GO) {
+        // EN NAV_GO YA NO CAMBIAMOS theta_goal,
+        // se queda fijo con el valor que tenía al salir de NAV_ALIGN.
+        err_theta = theta_goal - theta;
+        err_theta = wrapToPi(err_theta);
+
         v_cmd     = kv * dist;
         omega_cmd = kw * err_theta;
 
@@ -369,16 +461,45 @@ void navigation_step(float Ts)
     last_state = nav_state;
 }
 
-
-void function(void)
-{
+/* ========== AQUÍ ESTÁ TU FUNCIÓN DE TRAYECTORIA ========== */
+/*
+ * AQUÍ defines la trayectoria: a partir de s_traj (acumulado en metros)
+ * pones x_ref, y_ref del siguiente punto.
+ *
+ * EJEMPLO actual: línea recta en Y.
+ * Si quieres una ELIPSE pequeña, aquí puedes cambiar por:
+ *
+ *   const float a = 0.25f; // semieje X [m]
+ *   const float b = 0.15f; // semieje Y [m]
+ *   float t = s_traj / 0.2f;     // factor para que avance despacio
+ *   if (t > 2.0f*3.14159265f) {  // reiniciar una vuelta
+ *       s_traj = 0.0f;
+ *       t = 0.0f;
+ *   }
+ *   x_ref = a * cosf(t);
+ *   y_ref = b * sinf(t);
+ */
+void function(void) {
+    // avanzamos a lo largo de la trayectoria
     s_traj += S_STEP;
 
-
-    x_ref = s_traj;
+    // ====== EJEMPLO: trayectoria en línea recta en Y ======
+    x_ref = 0.0f;
     y_ref = s_traj;
-}
 
+    // --- EJEMPLO ELIPSE (DESCOMENTAR SI LA QUIERES USAR) ---
+    /*
+    const float a = 0.25f; // semieje X [m]
+    const float b = 0.15f; // semieje Y [m]
+    float t = s_traj / 0.2f;
+    if (t > 2.0f*3.14159265f) {
+        s_traj = 0.0f;
+        t = 0.0f;
+    }
+    x_ref = a * cosf(t);
+    y_ref = b * sinf(t);
+    */
+}
 
 /* ============== TIM1 ENCODER (PA8/PA9, AF2) ============== */
 void TIM1_Encoder_Init(void) {
@@ -386,7 +507,8 @@ void TIM1_Encoder_Init(void) {
     RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
 
     GPIOA->MODER &= ~((3u << (8*2)) | (3u << (9*2)));
-    GPIOA->MODER |=  ((2u << (8*2)) | (2u << (9*2)));     // AF
+    GPIOA->MODER |=  ((2u << (8*2)) | (2u << (9*2)));
+    // AF
     GPIOA->AFR[1] &= ~((0xFu << 0) | (0xFu << 4));       // p8,p9
     GPIOA->AFR[1] |=  ((2u   << 0) | (2u   << 4));       // AF2
 
@@ -532,4 +654,191 @@ static float wrapToPi(float a) {
     while (a >  3.14159265f) a -= 2.0f * 3.14159265f;
     while (a < -3.14159265f) a += 2.0f * 3.14159265f;
     return a;
+}
+
+/* ==================== I2C1 (MPU6050) ==================== */
+static void i2c1_gpio_init(void){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+
+    GPIOB->MODER   &= ~((3u<<(I2C_SCL_PIN*2)) | (3u<<(I2C_SDA_PIN*2)));
+    GPIOB->MODER   |=  ((2u<<(I2C_SCL_PIN*2)) | (2u<<(I2C_SDA_PIN*2)));
+    GPIOB->OTYPER  |=  (1u<<I2C_SCL_PIN) | (1u<<I2C_SDA_PIN);
+    GPIOB->PUPDR   &= ~((3u<<(I2C_SCL_PIN*2)) | (3u<<(I2C_SDA_PIN*2)));
+    GPIOB->PUPDR   |=  ((1u<<(I2C_SCL_PIN*2)) | (1u<<(I2C_SDA_PIN*2)));
+    GPIOB->AFR[0]  &= ~((0xFu<<(I2C_SCL_PIN*4)) | (0xFu<<(I2C_SDA_PIN*4)));
+    GPIOB->AFR[0]  |=  ((0x1u<<(I2C_SCL_PIN*4)) | (0x1u<<(I2C_SDA_PIN*4)));
+    GPIOB->OSPEEDR |=  ((3u<<(I2C_SCL_PIN*2)) | (3u<<(I2C_SDA_PIN*2)));
+}
+static void i2c1_init_100k(void){
+    RCC->APB1ENR |= RCC_APB1ENR_I2C1EN;
+    RCC->APB1RSTR |= RCC_APB1RSTR_I2C1RST;
+    RCC->APB1RSTR &= ~RCC_APB1RSTR_I2C1RST;
+
+    I2C1->CR1 &= ~I2C_CR1_PE;
+    /* 100 kHz @ 8 MHz */
+    I2C1->TIMINGR = 0x00201D2B;
+    I2C1->CR1 |= I2C_CR1_PE;
+}
+static void i2c1_write_reg(uint8_t dev7, uint8_t reg, uint8_t data){
+    I2C1->CR2 = ((uint32_t)dev7<<1) | (2u<<16) | I2C_CR2_AUTOEND;
+    I2C1->CR2 &= ~I2C_CR2_RD_WRN;
+    I2C1->CR2 |= I2C_CR2_START;
+
+    while(!(I2C1->ISR & I2C_ISR_TXIS)){;}
+    I2C1->TXDR = reg;
+
+    while(!(I2C1->ISR & I2C_ISR_TXIS)){;}
+    I2C1->TXDR = data;
+
+    while(!(I2C1->ISR & I2C_ISR_STOPF)){;}
+    I2C1->ICR = I2C_ICR_STOPCF;
+}
+static void i2c1_read_bytes(uint8_t dev7, uint8_t reg, uint8_t *buf, uint8_t len){
+    if(!len){ return; }
+
+    /* Escribir registro */
+    I2C1->CR2 = ((uint32_t)dev7<<1) | (1u<<16);
+    I2C1->CR2 &= ~I2C_CR2_RD_WRN;
+    I2C1->CR2 |= I2C_CR2_START;
+
+    while(!(I2C1->ISR & I2C_ISR_TXIS)){;}
+    I2C1->TXDR = reg;
+
+    while(!(I2C1->ISR & I2C_ISR_TC)){;}   // importante TC aquí
+
+    /* Leer len bytes */
+    I2C1->CR2 = ((uint32_t)dev7<<1) | (len<<16) | I2C_CR2_RD_WRN | I2C_CR2_AUTOEND;
+    I2C1->CR2 |= I2C_CR2_START;
+
+    for(uint8_t i=0;i<len;i++){
+        while(!(I2C1->ISR & I2C_ISR_RXNE)){;}
+        buf[i]= (uint8_t)I2C1->RXDR;
+    }
+
+    while(!(I2C1->ISR & I2C_ISR_STOPF)){;}
+    I2C1->ICR = I2C_ICR_STOPCF;
+}
+
+/* ==================== Init & Calibraciones MPU ==================== */
+static void mpu_init(void){
+    i2c1_write_reg(MPU_ADDR, REG_PWR_MGMT_1, 0x01);  // PLL Xgyro, SLEEP=0
+    delay_ms(20);
+    i2c1_write_reg(MPU_ADDR, REG_CONFIG,       0x03); // DLPF 44 Hz
+    i2c1_write_reg(MPU_ADDR, REG_SMPLRT_DIV,   0x07); // 125 Hz
+    i2c1_write_reg(MPU_ADDR, REG_ACCEL_CONFIG, 0x00); // ±2 g
+    i2c1_write_reg(MPU_ADDR, REG_GYRO_CONFIG,  0x00); // ±250 dps
+    i2c1_write_reg(MPU_ADDR, REG_INT_ENABLE,   0x00);
+}
+
+/* Acel en reposo horizontal: X≈0, Y≈0, Z≈+1 g */
+static void accel_calibrate_zero(uint16_t N){
+    int64_t sx=0, sy=0, sz=0;
+    for(uint16_t i=0;i<N;i++){
+        uint8_t r[14]; i2c1_read_bytes(MPU_ADDR, REG_ACCEL_XOUT_H, r, 14);
+        int16_t ax=(int16_t)((r[0]<<8)|r[1]);
+        int16_t ay=(int16_t)((r[2]<<8)|r[3]);
+        int16_t az=(int16_t)((r[4]<<8)|r[5]);
+        sx+=ax; sy+=ay; sz+=az;
+        delay_ms(5);
+    }
+    ax_off = (int32_t)(sx/N);
+    ay_off = (int32_t)(sy/N);
+    /* conservamos +1 g en Z */
+    az_off = (int32_t)(sz/N) - (int32_t)ACC_LSB_PER_G;
+}
+
+/* Giroscopio en reposo */
+static void gyro_calibrate(uint16_t N){
+    float sx=0, sy=0, sz=0;
+    for(uint16_t i=0;i<N;i++){
+        uint8_t r[14]; i2c1_read_bytes(MPU_ADDR, REG_ACCEL_XOUT_H, r, 14);
+        int16_t gx=(int16_t)((r[8]<<8)|r[9]);
+        int16_t gy=(int16_t)((r[10]<<8)|r[11]);
+        int16_t gz=(int16_t)((r[12]<<8)|r[13]);
+        sx += (float)gx / GYR_LSB_PER_DPS;
+        sy += (float)gy / GYR_LSB_PER_DPS;
+        sz += (float)gz / GYR_LSB_PER_DPS;
+        delay_ms(5);
+    }
+    gx_bias=sx/N; gy_bias=sy/N; gz_bias=sz/N;
+}
+
+/* ==================== Lectura + conversión ==================== */
+static void mpu_read_all(void){
+    uint8_t r[14]; i2c1_read_bytes(MPU_ADDR, REG_ACCEL_XOUT_H, r, 14);
+
+    int16_t axr=(int16_t)((r[0]<<8)|r[1]);
+    int16_t ayr=(int16_t)((r[2]<<8)|r[3]);
+    int16_t azr=(int16_t)((r[4]<<8)|r[5]);
+
+    int16_t gxr=(int16_t)((r[8]<<8)|r[9]);
+    int16_t gyr=(int16_t)((r[10]<<8)|r[11]);
+    int16_t gzr=(int16_t)((r[12]<<8)|r[13]);
+
+    int32_t axc=(int32_t)axr-ax_off;
+    int32_t ayc=(int32_t)ayr-ay_off;
+    int32_t azc=(int32_t)azr-az_off;
+
+    ax_g = ((float)axc)/ACC_LSB_PER_G;
+    ay_g = ((float)ayc)/ACC_LSB_PER_G;
+    az_g = ((float)azc)/ACC_LSB_PER_G;
+
+    ax_mps2 = ax_g*G0;
+    ay_mps2 = ay_g*G0;
+    az_mps2 = az_g*G0;
+
+    gx_dps = ((float)gxr / GYR_LSB_PER_DPS - gx_bias)*GYRO_SIGN_X;
+    gy_dps = ((float)gyr / GYR_LSB_PER_DPS - gy_bias)*GYRO_SIGN_Y;
+    gz_dps = ((float)gzr / GYR_LSB_PER_DPS - gz_bias)*GYRO_SIGN_Z;
+}
+
+/* ===== Helpers ===== */
+static inline float clampf(float x, float lo, float hi){
+    return (x<lo)?lo:((x>hi)?hi:x);
+}
+static inline float wrap_deg_0_360(float a){
+    while(a>=360.0f){a-=360.0f;}
+    while(a<0.0f){a+=360.0f;}
+    return a;
+}
+
+/* ==================== Integración de ángulos (usa gyro Z para angZ_deg) ==================== */
+static void integrate_angles(float dt){
+    /* Integración por rectángulos: θ(k+1) = θ(k) + ω(k)*dt */
+    roll_deg  += gx_dps * dt;   // X
+    pitch_deg += gy_dps * dt;   // Y
+    yaw_deg   += gz_dps * dt;   // Z
+
+    angZ_deg = yaw_deg;         // este es el ángulo acumulado en Z que usamos como heading
+
+    /* Yaw envuelto y acumulado (por si lo quieres en 0..360 o acumulado) */
+    static float prev_mod = 0.0f;
+    yaw_mod_deg = wrap_deg_0_360(yaw_deg);
+    float d = yaw_mod_deg - prev_mod;
+    if(d>180.0f){ d-=360.0f; }
+    if(d<-180.0f){ d+=360.0f; }
+    yaw_cum_deg += d;
+    prev_mod = yaw_mod_deg;
+
+    /* Fusión con ACC para roll/pitch (suaviza deriva) */
+    float ax=ax_g, ay=ay_g, az=az_g;
+    float n = sqrtf(ax*ax + ay*ay + az*az);
+    if(n>1e-6f){ ax/=n; ay/=n; az/=n; }
+    float roll_acc  = atan2f(ay, az) * 57.2957795f;
+    float pitch_acc = atan2f(-ax, sqrtf(ay*ay + az*az)) * 57.2957795f;
+
+    float rate_sum = fabsf(gx_dps) + fabsf(gy_dps) + fabsf(gz_dps);
+    float beta_min = 0.02f;
+    float beta_max = 0.25f;
+    float rate_thr = 5.0f;
+    float w_rate   = 1.0f - clampf(rate_sum / rate_thr, 0.0f, 1.0f);
+
+    float g_err  = fabsf(n - 1.0f);
+    float g_thr  = 0.08f;
+    float w_grav = 1.0f - clampf(g_err / g_thr, 0.0f, 1.0f);  // <<< LÍNEA ARREGLADA
+
+    float beta = beta_min + (beta_max - beta_min) * (w_rate * w_grav);
+
+    roll_deg  = (1.0f-beta)*roll_deg  + beta*roll_acc;
+    pitch_deg = (1.0f-beta)*pitch_deg + beta*pitch_acc;
 }
