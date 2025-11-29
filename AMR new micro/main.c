@@ -46,9 +46,6 @@ void delay(uint32_t ms);
 static float wrapToPi(float a); // Hacer que en ángulo vaya de [-pi , pi ]
 void navigation_step(float Ts);
 
-//Para la función de trayectoria
-void function(void);   // prototipo
-
 void setMotor1PWM1(int16_t pwm_value); // M1 Adelante
 void setMotor1PWM2(int16_t pwm_value); // M1 Atrás
 void setMotor2PWM1(int16_t pwm_value); // M2 Adelante
@@ -159,9 +156,13 @@ float   rpm2 = 0.0f, rpm_f2 = 0.0f;
 float   e2 = 0.0f, inte2 = 0.0f, u2 = 0.0f;
 const float kp2 = 7.0f, ki2 = 3.0f, kd2 = 0.0f;
 
-// Posición deseada
+// Posición deseada actual
 float x_ref = 0.0f;   // [m] objetivo en X
 float y_ref = 0.0f;   // [m] objetivo en Y
+
+// Punto anterior de la trayectoria (para vector tangente)
+static float x_ref_prev = 0.0f;
+static float y_ref_prev = 0.0f;
 
 float kv = 0.7f;             // ganancia de velocidad lineal
 const float kw = 1.0f;       // ganancia de velocidad angular
@@ -178,10 +179,77 @@ const float dist_tol  = 0.02f;  // [m] tolerancia de distancia al objetivo
 const float ang_tol   = 0.10f;  // [rad] (~3 grados) tolerancia de ángulo
 
 volatile float dist = 0.0f;         // [m]
-volatile float theta_goal = 0.0f;   // [rad] ÁNGULO OBJETIVO DEL TRAMO (CONSTANTE EN NAV_GO)
+volatile float theta_goal = 0.0f;   // [rad] ÁNGULO OBJETIVO DEL TRAMO (tangente)
 
-const float S_STEP = 0.05f;   // 5 cm entre puntos (0.05 m)
-static float s_traj = 0.0f;   // acumulado de trayectoria
+/* ==================== TRAYECTORIA: 20 PUNTOS LÍNEA + 100 PUNTOS CÍRCULO ==================== */
+/*  - Puntos 0..19: línea recta (0,0) -> (1,0)
+ *  - Puntos 20..119: círculo r=1 centrado en (0,0), con pequeño offset en ángulo
+ */
+#define NUM_WP   120
+#define N_LINE   20
+#define N_CIRCLE 100
+
+static const float x_wp[NUM_WP] = {
+    /* ===== 20 pts línea (0,0) -> (1,0) ===== */
+     0.000000f,  0.052632f,  0.105263f,  0.157895f,  0.210526f,
+     0.263158f,  0.315789f,  0.368421f,  0.421053f,  0.473684f,
+     0.526316f,  0.578947f,  0.631579f,  0.684211f,  0.736842f,
+     0.789474f,  0.842105f,  0.894737f,  0.947368f,  1.000000f,
+
+    /* ===== 100 pts círculo r=1, centrado en (0,0) (offset de 0.5 step) ===== */
+     0.999507f,  0.995562f,  0.987688f,  0.975917f,  0.960294f,
+     0.940881f,  0.917755f,  0.891007f,  0.860742f,  0.827081f,
+     0.790155f,  0.750111f,  0.707107f,  0.661312f,  0.612907f,
+     0.562083f,  0.509041f,  0.453990f,  0.397148f,  0.338738f,
+     0.278991f,  0.218143f,  0.156434f,  0.094108f,  0.031411f,
+    -0.031411f, -0.094108f, -0.156434f, -0.218143f, -0.278991f,
+    -0.338738f, -0.397148f, -0.453990f, -0.509041f, -0.562083f,
+    -0.612907f, -0.661312f, -0.707107f, -0.750111f, -0.790155f,
+    -0.827081f, -0.860742f, -0.891007f, -0.917755f, -0.940881f,
+    -0.960294f, -0.975917f, -0.987688f, -0.995562f, -0.999507f,
+    -0.999507f, -0.995562f, -0.987688f, -0.975917f, -0.960294f,
+    -0.940881f, -0.917755f, -0.891007f, -0.860742f, -0.827081f,
+    -0.790155f, -0.750111f, -0.707107f, -0.661312f, -0.612907f,
+    -0.562083f, -0.509041f, -0.453990f, -0.397148f, -0.338738f,
+    -0.278991f, -0.218143f, -0.156434f, -0.094108f, -0.031411f,
+     0.031411f,  0.094108f,  0.156434f,  0.218143f,  0.278991f,
+     0.338738f,  0.397148f,  0.453990f,  0.509041f,  0.562083f,
+     0.612907f,  0.661312f,  0.707107f,  0.750111f,  0.790155f,
+     0.827081f,  0.860742f,  0.891007f,  0.917755f,  0.940881f,
+     0.960294f,  0.975917f,  0.987688f,  0.995562f,  0.999507f
+};
+
+static const float y_wp[NUM_WP] = {
+    /* ===== 20 pts línea (0,0) -> (1,0) ===== */
+     0.000000f,  0.000000f,  0.000000f,  0.000000f,  0.000000f,
+     0.000000f,  0.000000f,  0.000000f,  0.000000f,  0.000000f,
+     0.000000f,  0.000000f,  0.000000f,  0.000000f,  0.000000f,
+     0.000000f,  0.000000f,  0.000000f,  0.000000f,  0.000000f,
+
+    /* ===== 100 pts círculo r=1 ===== */
+     0.031411f,  0.094108f,  0.156434f,  0.218143f,  0.278991f,
+     0.338738f,  0.397148f,  0.453990f,  0.509041f,  0.562083f,
+     0.612907f,  0.661312f,  0.707107f,  0.750111f,  0.790155f,
+     0.827081f,  0.860742f,  0.891007f,  0.917755f,  0.940881f,
+     0.960294f,  0.975917f,  0.987688f,  0.995562f,  0.999507f,
+     0.999507f,  0.995562f,  0.987688f,  0.975917f,  0.960294f,
+     0.940881f,  0.917755f,  0.891007f,  0.860742f,  0.827081f,
+     0.790155f,  0.750111f,  0.707107f,  0.661312f,  0.612907f,
+     0.562083f,  0.509041f,  0.453990f,  0.397148f,  0.338738f,
+     0.278991f,  0.218143f,  0.156434f,  0.094108f,  0.031411f,
+    -0.031411f, -0.094108f, -0.156434f, -0.218143f, -0.278991f,
+    -0.338738f, -0.397148f, -0.453990f, -0.509041f, -0.562083f,
+    -0.612907f, -0.661312f, -0.707107f, -0.750111f, -0.790155f,
+    -0.827081f, -0.860742f, -0.891007f, -0.917755f, -0.940881f,
+    -0.960294f, -0.975917f, -0.987688f, -0.995562f, -0.999507f,
+    -0.999507f, -0.995562f, -0.987688f, -0.975917f, -0.960294f,
+    -0.940881f, -0.917755f, -0.891007f, -0.860742f, -0.827081f,
+    -0.790155f, -0.750111f, -0.707107f, -0.661312f, -0.612907f,
+    -0.562083f, -0.509041f, -0.453990f, -0.397148f, -0.338738f,
+    -0.278991f, -0.218143f, -0.156434f, -0.094108f, -0.031411f
+};
+
+static uint16_t wp_idx = 0;   // índice del waypoint actual (0..NUM_WP-1)
 
 /* ====================== MAIN ====================== */
 int main(void) {
@@ -212,6 +280,18 @@ int main(void) {
     yaw_deg = pitch_deg = roll_deg = 0.0f;
     yaw_mod_deg = yaw_cum_deg = 0.0f;
     angZ_deg = 0.0f;
+
+    /* ======= INICIALIZAR TRAYECTORIA ======= */
+    wp_idx      = 0;
+    x_ref       = x_wp[0];
+    y_ref       = y_wp[0];
+    x_ref_prev  = x_ref;
+    y_ref_prev  = y_ref;
+
+    x_pos       = 0.0f;
+    y_pos       = 0.0f;
+    theta       = 0.0f;   // asumimos robot apuntando al +X
+    theta_deg   = 0.0f;
 
     // Derivada filtrada (se quedan estáticas en el lazo)
     static float prev_e1 = 0.0f, prev_e2 = 0.0f;
@@ -250,10 +330,7 @@ int main(void) {
             float v = R_WHEEL * 0.5f * (Wr + Wl);            // [m/s] velocidad lineal
             omega  = R_WHEEL * (Wr - Wl) / L_AXLE;           // [rad/s] velocidad angular
 
-            /* ====== ACTUALIZAR ÁNGULO THETA CON MPU6050 (EJE Z) ======
-             * Se integra el giroscopio en Z dentro de integrate_angles().
-             * Aquí tomamos angZ_deg como heading del robot.
-             */
+            /* ====== ACTUALIZAR ÁNGULO THETA CON MPU6050 (EJE Z) ====== */
             mpu_read_all();           // lee ACC + GYRO
             integrate_angles(Ts);     // integra giroscopio, actualiza angZ_deg
 
@@ -267,7 +344,6 @@ int main(void) {
 
             x_pos += v_x * Ts;
             y_pos += v_y * Ts;
-            // theta ya viene del MPU, no se integra aquí con omega
 
             /* ====== NAVEGACIÓN (actualiza rpm_des1, rpm_des2) ====== */
             navigation_step(Ts);
@@ -297,7 +373,7 @@ int main(void) {
 
             if (fabsf(rpm_f1) > 50) {
                 u1    = 0.0f;
-                inte1 = 0.0f;     // resetea integrador para que no se enloquezca
+                inte1 = 0.0f;
             }
 
             // Actuación por signo de setpoint (M1)
@@ -325,7 +401,6 @@ int main(void) {
             if (u2 > 1023.0f) u2 = 1023.0f;
             if (u2 < -1023.0f) u2 = -1023.0f;
 
-            // Motor 2:
             if (fabsf(rpm_f2) > 50) {
                 u2    = 0.0f;
                 inte2 = 0.0f;
@@ -335,171 +410,153 @@ int main(void) {
             if (rpm_des2 < 0.0f)      setMotor2PWM2(du2);      // atrás
             else if (rpm_des2 > 0.0f) setMotor2PWM1(du2);      // adelante
             else                      setMotor2PWM1(0);        // paro
-
-            // En Live Expressions puedes ver:
-            // x_pos, y_pos, theta_deg, angZ_deg, x_ref, y_ref, rpm_des1, rpm_des2, rpm_f1, rpm_f2
         }
     }
 }
 
-/* ============== Función de navegación ============== */
+/* ============== Función de navegación (usa el ARRAY de puntos) ============== */
+/* ============== Función de navegación (usa el ARRAY de puntos) ============== */
 void navigation_step(float Ts) {
     (void)Ts;
 
-    // --- Estado anterior para detectar cambios de modo ---
-    static nav_state_t last_state = NAV_ALIGN;
-
-    // Error de posición
-    float dx = x_ref - x_pos;
-    float dy = y_ref - y_pos;
-
-    dist = sqrtf(dx*dx + dy*dy);
-
-    // Ángulo hacia el punto actual (respecto al mundo)
-    float theta_to_target = atan2f(dy, dx);
-
-    // Error angular respecto al robot (usando theta_goal, ver más abajo)
-    float err_theta = 0.0f;
-
-    // 1) ¿ya llegué a este punto?
-    if (dist < dist_tol) {
-        function();          // siguiente punto de la trayectoria
-        nav_state = NAV_ALIGN;   // IMPORTANTE: volver a alinearse para el nuevo tramo
-        last_state = nav_state;
+    // Si ya terminamos todos los waypoints -> parar motores
+    if (wp_idx >= NUM_WP) {
+        rpm_des1 = 0.0f;
+        rpm_des2 = 0.0f;
         return;
     }
 
-    float v_cmd     = 0.0f;
-    float omega_cmd = 0.0f;
+    /* -------- Distancia al waypoint actual -------- */
+    float ex = x_ref - x_pos;
+    float ey = y_ref - y_pos;
+    dist = sqrtf(ex*ex + ey*ey);   // distancia al waypoint actual
 
-    // Histeresis angular
-    const float ang_tol_align   = 0.25f;  // ~14°
-
-    // --- Si CAMBIÓ el estado desde la última llamada, resetea el control ---
-    if (nav_state != last_state) {
-        inte1 = 0.0f;
-        inte2 = 0.0f;
-        rpm_des1 = 0.0f;
-        rpm_des2 = 0.0f;
-        // Opcional: apagar PWM directamente
-        TIM3->CCR3 = 0;
-        TIM3->CCR4 = 0;
+    /* -------- Vector tangente (de waypoint actual al siguiente) -------- */
+    float tx, ty;
+    if (wp_idx < (NUM_WP - 1)) {
+        // usar segmento [waypoint actual -> siguiente] como tangente
+        float x_next = x_wp[wp_idx + 1];
+        float y_next = y_wp[wp_idx + 1];
+        tx = x_next - x_ref;
+        ty = y_next - y_ref;
+    } else {
+        // último punto: usar [prev -> actual]
+        tx = x_ref - x_ref_prev;
+        ty = y_ref - y_ref_prev;
     }
 
-    // ===== MODO 1: Alinear primero (solo giro, sin avanzar) =====
-    if (nav_state == NAV_ALIGN) {
-        // AQUÍ sí actualizamos theta_goal hacia el punto ACTUAL
-        theta_goal = theta_to_target;
+    float t2 = tx*tx + ty*ty;
+    if (t2 < 1e-6f) {
+        // si el vector es casi cero, usar orientación actual del robot
+        tx = cosf(theta);
+        ty = sinf(theta);
+        t2 = tx*tx + ty*ty;
+    }
 
-        err_theta = theta_goal - theta;
-        err_theta = wrapToPi(err_theta);
+    // Ángulo deseado de la trayectoria = ángulo de la tangente
+    theta_goal = atan2f(ty, tx);
+    theta_goal = wrapToPi(theta_goal);
+
+    /* -------- LÓGICA ROBUSTA PARA CAMBIAR DE WAYPOINT -------- */
+    if (wp_idx < (NUM_WP - 1)) {
+        float x_next = x_wp[wp_idx + 1];
+        float y_next = y_wp[wp_idx + 1];
+
+        float ex_next = x_next - x_pos;
+        float ey_next = y_next - y_pos;
+        float dist_next = sqrtf(ex_next*ex_next + ey_next*ey_next);
+
+        // margen pequeño para evitar oscilación: 1 cm
+        const float ADV_MARGIN = 0.01f;
+
+        // SI:
+        //  - ya estoy dentro de la tolerancia del waypoint actual, O
+        //  - estoy claramente más cerca del siguiente que del actual,
+        // ENTONCES avanzo al siguiente waypoint
+        if ((dist < dist_tol) || (dist_next + ADV_MARGIN < dist)) {
+            wp_idx++;
+
+            x_ref_prev = x_ref;
+            y_ref_prev = y_ref;
+
+            x_ref = x_wp[wp_idx];
+            y_ref = y_wp[wp_idx];
+
+            return;  // este ciclo solo actualiza el índice; el control actúa en el siguiente tick
+        }
+    } else {
+        // Último waypoint: si ya estoy cerca, paro
+        if (dist < dist_tol) {
+            rpm_des1 = 0.0f;
+            rpm_des2 = 0.0f;
+            return;
+        }
+    }
+
+    /* -------- CONTROL DE VELOCIDADES v_cmd y omega_cmd -------- */
+    float v_cmd     = 0.0f;
+    float omega_cmd = 0.0f;
+    float err_theta = 0.0f;
+
+    const float ang_tol_align = 0.25f;  // ~14°
+
+    // ====== NAV_ALIGN: solo girar hasta alinearse con la tangente ======
+    if (nav_state == NAV_ALIGN) {
+        err_theta = wrapToPi(theta_goal - theta);
 
         v_cmd     = 0.0f;
-        omega_cmd = kw_align * err_theta;   // giro suave
+        omega_cmd = kw_align * err_theta;
 
-        // límites de giro en alineación
         if (omega_cmd >  omega_align_max) omega_cmd =  omega_align_max;
         if (omega_cmd < -omega_align_max) omega_cmd = -omega_align_max;
 
-        // Si ya quedó bien alineado -> ahora sí avanzar
+        // Cuando ya estoy alineada, empiezo a avanzar
         if (fabsf(err_theta) < ang_tol_align) {
             nav_state = NAV_GO;
         }
     }
 
-    // ===== MODO 2: Avanzar hacia el punto =====
+    // ====== NAV_GO: avanzar siguiendo la curva ======
     if (nav_state == NAV_GO) {
-        // EN NAV_GO YA NO CAMBIAMOS theta_goal,
-        // se queda fijo con el valor que tenía al salir de NAV_ALIGN.
-        err_theta = theta_goal - theta;
-        err_theta = wrapToPi(err_theta);
+        err_theta = wrapToPi(theta_goal - theta);
 
         v_cmd     = kv * dist;
         omega_cmd = kw * err_theta;
 
-        // nunca ir hacia atrás en NAV_GO
         if (v_cmd < 0.0f) v_cmd = 0.0f;
-
-        // limitar velocidad lineal
         if (v_cmd > v_max) v_cmd = v_max;
-
-        // si está lejos y v_cmd muy pequeña, usar mínima
         if (dist > dist_tol && v_cmd < v_min) {
             v_cmd = v_min;
         }
 
-        // límites de omega cuando está avanzando
         if (omega_cmd >  omega_max) omega_cmd =  omega_max;
         if (omega_cmd < -omega_max) omega_cmd = -omega_max;
     }
 
-    // ===== (v_cmd, omega_cmd) → velocidades angulares de ruedas =====
-    float Wr_des = (2.0f * v_cmd + omega_cmd * L_AXLE) / (2.0f * R_WHEEL); // derecha
-    float Wl_des = (2.0f * v_cmd - omega_cmd * L_AXLE) / (2.0f * R_WHEEL); // izquierda
+    /* -------- (v_cmd, omega_cmd) -> rpm de ruedas -------- */
+    float Wr_des = (2.0f * v_cmd + omega_cmd * L_AXLE) / (2.0f * R_WHEEL);
+    float Wl_des = (2.0f * v_cmd - omega_cmd * L_AXLE) / (2.0f * R_WHEEL);
 
-    // rad/s → RPM
     float rpm_r_des = Wr_des * 60.0f / (2.0f * 3.14159265f);
     float rpm_l_des = Wl_des * 60.0f / (2.0f * 3.14159265f);
 
-    // En NAV_GO no queremos reversa, solo corrección con omega
+    // En NAV_GO no dejamos retroceder (solo hacia adelante sobre el camino)
     if (nav_state == NAV_GO) {
         if (rpm_r_des < 0.0f) rpm_r_des = 0.0f;
         if (rpm_l_des < 0.0f) rpm_l_des = 0.0f;
     }
 
-    // limitar RPM deseadas
     const float RPM_MAX = 30.0f;
     if (rpm_r_des >  RPM_MAX) rpm_r_des =  RPM_MAX;
     if (rpm_r_des < -RPM_MAX) rpm_r_des = -RPM_MAX;
     if (rpm_l_des >  RPM_MAX) rpm_l_des =  RPM_MAX;
     if (rpm_l_des < -RPM_MAX) rpm_l_des = -RPM_MAX;
 
-    rpm_des1 = rpm_r_des;  // Motor 1 (derecha)
-    rpm_des2 = rpm_l_des;  // Motor 2 (izquierda)
-
-    // actualizar estado previo
-    last_state = nav_state;
+    rpm_des1 = rpm_r_des;   // derecha
+    rpm_des2 = rpm_l_des;   // izquierda
 }
 
-/* ========== AQUÍ ESTÁ TU FUNCIÓN DE TRAYECTORIA ========== */
-/*
- * AQUÍ defines la trayectoria: a partir de s_traj (acumulado en metros)
- * pones x_ref, y_ref del siguiente punto.
- *
- * EJEMPLO actual: línea recta en Y.
- * Si quieres una ELIPSE pequeña, aquí puedes cambiar por:
- *
- *   const float a = 0.25f; // semieje X [m]
- *   const float b = 0.15f; // semieje Y [m]
- *   float t = s_traj / 0.2f;     // factor para que avance despacio
- *   if (t > 2.0f*3.14159265f) {  // reiniciar una vuelta
- *       s_traj = 0.0f;
- *       t = 0.0f;
- *   }
- *   x_ref = a * cosf(t);
- *   y_ref = b * sinf(t);
- */
-void function(void) {
-    // avanzamos a lo largo de la trayectoria
-    s_traj += S_STEP;
 
-    // ====== EJEMPLO: trayectoria en línea recta en Y ======
-    x_ref = 0.0f;
-    y_ref = s_traj;
-
-    // --- EJEMPLO ELIPSE (DESCOMENTAR SI LA QUIERES USAR) ---
-    /*
-    const float a = 0.25f; // semieje X [m]
-    const float b = 0.15f; // semieje Y [m]
-    float t = s_traj / 0.2f;
-    if (t > 2.0f*3.14159265f) {
-        s_traj = 0.0f;
-        t = 0.0f;
-    }
-    x_ref = a * cosf(t);
-    y_ref = b * sinf(t);
-    */
-}
 
 /* ============== TIM1 ENCODER (PA8/PA9, AF2) ============== */
 void TIM1_Encoder_Init(void) {
@@ -835,7 +892,7 @@ static void integrate_angles(float dt){
 
     float g_err  = fabsf(n - 1.0f);
     float g_thr  = 0.08f;
-    float w_grav = 1.0f - clampf(g_err / g_thr, 0.0f, 1.0f);  // <<< LÍNEA ARREGLADA
+    float w_grav = 1.0f - clampf(g_err / g_thr, 0.0f, 1.0f);
 
     float beta = beta_min + (beta_max - beta_min) * (w_rate * w_grav);
 
