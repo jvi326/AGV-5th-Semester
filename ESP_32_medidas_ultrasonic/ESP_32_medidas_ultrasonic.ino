@@ -83,8 +83,6 @@ void loop() {
   if(d1 > 0 && d1 < threshold_cm){
     digitalWrite(OUT1_PIN, 1);
     ext_trig1 = 1;
-  } else {
-    digitalWrite(OUT1_PIN, 0);
   }
 
   // ---------------- Sensor 2 ----------------
@@ -106,7 +104,7 @@ void loop() {
   // ---------------- Cualquier trigger ----------------
   if(ext_trig1 || ext_trig2 || ext_trig3){
     WS2812_SetTwoColors(39, 40, strip.Color(255,0,0), strip.Color(255,0,0));
-    digitalWrite(OUT3_PIN, 1);
+    digitalWrite(OUT1_PIN, 1);
     PlayBuzzerPattern();
 
     if(ext_trig1){
@@ -132,7 +130,7 @@ void loop() {
 
   } else {
     WS2812_SetTwoColors(39, 40, strip.Color(0,255,0), strip.Color(0,255,0));
-    digitalWrite(OUT3_PIN, 0);
+    digitalWrite(OUT1_PIN, 0);
   }
 
   // Notificación cuando cambia threshold
