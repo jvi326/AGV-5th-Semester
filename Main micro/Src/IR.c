@@ -76,63 +76,69 @@ void LineFollower_FollowLine(LineFollower* LineFollower, CHASSIS* chassis, float
     LineFollower_GetStates(LineFollower, sensorStates);
     computeErrors(sensorStates, weights, &error, &total);
 
-    if (total == 0) {
-        // 🚫 Line lost → stop motors
-    	if(out_line == 0){
-    		out_line = 1;
-    		if (pid_last_error < 0) {
-				Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, (chassis->advanceInverted ? -forward_velocity : forward_velocity));
-				Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
-			}
-    		if (pid_last_error > 0) {
-				Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
-				Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, (chassis->advanceInverted ? -forward_velocity : forward_velocity));
-			}
-    	}
-
-    	if (stop_flags.color_flag == 1){
-    		Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
-    		Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
-    	}
-
-    } else if (total > 4){
+    if (stop_flags.color_flag == 1){
     	Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
     	Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
-    } else if ((total < 4) && (total > 0)) {
-    	out_line = 0;
-    	error = -error;
-    	//Side correction
-        // 2️⃣ PID computation
-        pid_integral += error;
-        float derivative = error - pid_last_error;
-        pid_last_error = error;
+    } else {
+    		if (total == 0) {
+    	        // 🚫 Line lost → stop motors
+    	    	if(out_line == 0){
+    	    		out_line = 1;
+    	    		if (pid_last_error < 0) {
+    					Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, (chassis->advanceInverted ? -forward_velocity : forward_velocity));
+    					Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
+    				}
+    	    		if (pid_last_error > 0) {
+    					Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
+    					Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, (chassis->advanceInverted ? -forward_velocity : forward_velocity));
+    				}
+    	    	}
 
-        float Kp = temp_P;
-        float Ki = temp_I;
-        float Kd = temp_D;
+    	    	if (stop_flags.color_flag == 1){
+    	    		Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
+    	    		Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
+    	    	}
 
-        turnFactor = Kp*error + Ki*pid_integral + Kd*derivative;
+    	    } else if (total > 3){
+    	    	Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, 0);
+    	    	Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, 0);
+    	    } else if ((total < 4) && (total > 0)) {
+    	    	out_line = 0;
+    	    	error = -error;
+    	    	//Side correction
+    	        // 2️⃣ PID computation
+    	        pid_integral += error;
+    	        float derivative = error - pid_last_error;
+    	        pid_last_error = error;
 
-        // 3️⃣ Clamp output
-        if (turnFactor > 1.0f) turnFactor = 1.0f;
-        if (turnFactor < -1.0f) turnFactor = -1.0f;
+    	        float Kp = temp_P;
+    	        float Ki = temp_I;
+    	        float Kd = temp_D;
 
-        // 4️⃣ Base forward velocity
-        leftSpeed  = chassis->advanceInverted ? -forward_velocity : forward_velocity;
-        rightSpeed = chassis->advanceInverted ? -forward_velocity : forward_velocity;
+    	        turnFactor = Kp*error + Ki*pid_integral + Kd*derivative;
 
-        // 5️⃣ Apply correction (differential steering)
-        if (turnFactor > 0) {
-            // Line is to the right → turn right (reduce left)
-            leftSpeed  *= (1.0f - turnFactor);
-        } else if (turnFactor < 0) {
-            // Line is to the left → turn left (reduce right)
-            rightSpeed *= (1.0f + turnFactor); // turnFactor is negative
-        }
+    	        // 3️⃣ Clamp output
+    	        if (turnFactor > 1.0f) turnFactor = 1.0f;
+    	        if (turnFactor < -1.0f) turnFactor = -1.0f;
 
-        // 6️⃣ Apply motor speeds
-        Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, leftSpeed);
-        Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, rightSpeed);
+    	        // 4️⃣ Base forward velocity
+    	        leftSpeed  = chassis->advanceInverted ? -forward_velocity : forward_velocity;
+    	        rightSpeed = chassis->advanceInverted ? -forward_velocity : forward_velocity;
+
+    	        // 5️⃣ Apply correction (differential steering)
+    	        if (turnFactor > 0) {
+    	            // Line is to the right → turn right (reduce left)
+    	            leftSpeed  *= (1.0f - turnFactor);
+    	        } else if (turnFactor < 0) {
+    	            // Line is to the left → turn left (reduce right)
+    	            rightSpeed *= (1.0f + turnFactor); // turnFactor is negative
+    	        }
+
+    	        // 6️⃣ Apply motor speeds
+    	        Motor_SetSpeed_noBreak_if_0(&chassis->wheelLeft, leftSpeed);
+    	        Motor_SetSpeed_noBreak_if_0(&chassis->wheelRight, rightSpeed);
+    	    }
+
     }
 }
 

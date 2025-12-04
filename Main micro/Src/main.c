@@ -209,11 +209,13 @@ int main(void) {
 			        if (Paradas[k].waitFlag == 1) {
 			        	//CASO 1: Color si debe esperar
 			        	if(wait_enabled == 0){
+			        		pause_Chassis(&agv);
 			        		wait_enabled = 1;
 			        		run_wait_deadline = millis() + 10000u;  // 10 s
 			        	}
 			        } else {
 			        	if(run_enabled == 0) {
+			        		pause_Chassis(&agv);
 			        		control_reset_all();               // <—— LIMPIA TODO ANTES DE EMPEZAR
 							run_enabled = 1;
 							run_deadline = millis() + 4000u;  // 40 s
