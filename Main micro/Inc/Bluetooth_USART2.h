@@ -9,7 +9,7 @@
 
 // ===================== CONSTANTS =====================
 #define MAX_NUMBERS 10
-#define MAX_DIGITS  5
+#define MAX_DIGITS  10
 #define MAX_ARRAYS  10
 #define RX_BUF_SIZE 32
 #define MAX_MENSAJE 20

@@ -10,6 +10,7 @@
 #include "stm32f051x8.h"
 #include "motor_controller.h"
 #include "chassis.h"
+#include "stops.h"
 
 static void calculateWheelSpeeds(CHASSIS* AGV_Chassis){
 	//Selecting real max Speed
@@ -186,6 +187,8 @@ void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count) {
         if (numeros[1].i == 0) {
         	stop_Chassis(AGV_Chassis);
         	set_CoastMode(AGV_Chassis);
+        	lineFollowerMode = 0;
+        	justEnteredLineMode = 0;
         } else if (numeros[1].i == 1) {
             float avance = numeros[2].f;
             float giro = numeros[3].f;
@@ -211,6 +214,22 @@ void decideDir(CHASSIS* AGV_Chassis, volatile Numeros* numeros, uint8_t count) {
 
         	float avance = numeros[2].f;
 
+        	uint8_t bin_decider = (uint8_t)numeros[4].i;
+
+        	if (bin_decider < 8)
+        	{
+        	    uint8_t bits[3];
+
+        	    // Extraer los 3 bits (de menos a más significativo)
+        	    bits[0] = (bin_decider >> 0) & 1;  // bit 0 → para COLOR_BLUE (por ejemplo)
+        	    bits[1] = (bin_decider >> 1) & 1;  // bit 1 → para COLOR_GREEN
+        	    bits[2] = (bin_decider >> 2) & 1;  // bit 2 → para COLOR_RED
+
+        	    // Asignar cada bit a su respectiva parada
+        	    Paradas[0].waitFlag = bits[2];  // rojo
+        	    Paradas[1].waitFlag = bits[1];  // verde
+        	    Paradas[2].waitFlag = bits[0];  // azul
+        	}
 
 			// Validación del rango permitido para avance
 			if (avance >= -1.0 && avance <= 1.0) {
